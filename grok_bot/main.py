@@ -17,6 +17,7 @@ from grok_bot.grok_maker import GrokMaker
 from grok_bot.pipeline import PipelineContext, build_signal_candidate, verify_with_checker
 from grok_bot.risk import risk_check
 from grok_bot.safety import LiveTradingDisabledError, submit_order
+from grok_bot.dashboard import dashboard_url, serve_dashboard
 from loop.connectors.tradingview import TvSignalStore, serve
 from loop.driver import DiscoveryLoop
 from loop.state import StateManager
@@ -159,6 +160,19 @@ def risk_check_cmd() -> int:
     return 1 if result.get("halt") else 0
 
 
+def run_dashboard() -> int:
+    cfg = BotConfig.from_env()
+    serve_dashboard(cfg, reports_dir=Path("reports"))
+    url = dashboard_url(cfg, host=cfg.dashboard_public_host or "127.0.0.1")
+    print(json.dumps({"ok": True, "dashboard": url, "api": f"{url.rsplit('/', 1)[0]}/api/status"}, indent=2))
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def run_tradingview_webhook() -> int:
     cfg = BotConfig.from_env()
     store = TvSignalStore(cfg.tradingview_signals_path)
@@ -208,6 +222,11 @@ def main() -> int:
         action="store_true",
         help="VPS profit-discovery daemon (5m BTC up/down loop)",
     )
+    parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="read-only paper discovery dashboard (default port 8800)",
+    )
     args = parser.parse_args()
 
     if args.verify:
@@ -222,6 +241,8 @@ def main() -> int:
         return risk_check_cmd()
     if args.tradingview_webhook:
         return run_tradingview_webhook()
+    if args.dashboard:
+        return run_dashboard()
     if args.daemon:
         from grok_bot.daemon import run_daemon
 

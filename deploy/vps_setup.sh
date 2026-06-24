@@ -42,6 +42,7 @@ mkdir -p reports/loop_state reports
 # TradingView webhook on 8799
 ufw allow 22/tcp 2>/dev/null || true
 ufw allow 8799/tcp 2>/dev/null || true
+ufw allow 8800/tcp 2>/dev/null || true
 ufw --force enable 2>/dev/null || true
 
 docker compose build
@@ -54,4 +55,10 @@ echo ""
 echo "Grok-Bot-1 running (paper-only profit discovery)."
 echo "Logs: docker compose -f $INSTALL_DIR/docker-compose.yml logs -f grok-bot"
 echo "TradingView webhook: http://${IP}:8799/tv/${SECRET}"
+DASH_TOKEN=$(grep '^DASHBOARD_TOKEN=' .env | cut -d= -f2-)
+if [[ -n "$DASH_TOKEN" ]]; then
+  echo "Dashboard: http://${IP}:8800/dash/${DASH_TOKEN}"
+else
+  echo "Dashboard: http://${IP}:8800/"
+fi
 echo "Discovery status: docker compose exec grok-bot python -m grok_bot.main --discovery-status"

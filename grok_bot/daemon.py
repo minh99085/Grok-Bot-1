@@ -8,6 +8,7 @@ from pathlib import Path
 
 from grok_bot.analyst import run_self_improve_cycle
 from grok_bot.config import BotConfig
+from grok_bot.dashboard import dashboard_url, serve_dashboard
 from grok_bot.discovery_report import write_discovery_report
 from grok_bot.evidence import EvidenceStore, WindowRecord
 from grok_bot.factory import build_discovery_engine
@@ -53,17 +54,20 @@ def run_daemon(cfg: BotConfig | None = None, *, interval_seconds: float = 300.0)
 
     tv_store = TvSignalStore(cfg.tradingview_signals_path)
     webhook_path = _start_tradingview_webhook(cfg, tv_store)
+    serve_dashboard(cfg, reports_dir=reports)
     engine_window = Btc5mWindowEngine(cfg, tv_store=tv_store)
 
     evidence = EvidenceStore(reports / "windows.jsonl")
     state_mgr = StateManager(reports / "loop_state")
     discovery = build_discovery_engine(cfg, state_root=reports / "loop_state", reports_dir=reports)
 
+    public_host = cfg.dashboard_public_host or "45.32.224.147"
     startup = {
         "mode": "profit_discovery",
         "paper_only": cfg.paper_only,
         "llm_roles": cfg.llm_roles(),
         "webhook": f"http://{cfg.tradingview_host}:{cfg.tradingview_port}{webhook_path}",
+        "dashboard": dashboard_url(cfg, host=public_host),
         "interval_s": interval_seconds,
     }
     notify("Grok-Bot-1 daemon started", level="info")

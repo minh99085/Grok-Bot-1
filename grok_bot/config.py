@@ -33,6 +33,12 @@ class BotConfig:
 
     paper_only: bool = True
 
+    # Read-only monitoring dashboard
+    dashboard_host: str = "0.0.0.0"
+    dashboard_port: int = 8800
+    dashboard_token: str = ""
+    dashboard_public_host: str = ""
+
     @classmethod
     def from_env(cls) -> "BotConfig":
         return cls(
@@ -50,6 +56,10 @@ class BotConfig:
             chainlink_max_age_ms=int(_env("CHAINLINK_MAX_AGE_MS", "120000") or "120000"),
             cex_max_staleness_ms=int(_env("CEX_MAX_STALENESS_MS", "5000") or "5000"),
             paper_only=_env("PAPER_ONLY", "true").lower() in ("1", "true", "yes", "on"),
+            dashboard_host=_env("DASHBOARD_HOST", "0.0.0.0"),
+            dashboard_port=int(_env("DASHBOARD_PORT", "8800") or "8800"),
+            dashboard_token=_env("DASHBOARD_TOKEN"),
+            dashboard_public_host=_env("DASHBOARD_PUBLIC_HOST"),
         )
 
     def llm_roles(self) -> dict[str, str]:

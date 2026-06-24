@@ -229,6 +229,12 @@ cp .env.example .env   # set XAI_API_KEY, ANTHROPIC_API_KEY
 bash deploy/vps_setup.sh
 ```
 
+**Paper training dashboard** (auto-starts with `--daemon`):
+
+`http://45.32.224.147:8800/`
+
+Set `DASHBOARD_TOKEN` in `.env` for a private URL: `http://45.32.224.147:8800/dash/<token>`
+
 TradingView alert URL after deploy:
 
 `http://45.32.224.147:8799/tv/<TRADINGVIEW_WEBHOOK_SECRET>`
@@ -303,6 +309,7 @@ python -m grok_bot.main --tradingview-webhook   # receive BTCUSDT alerts
 python -m grok_bot.main --discover-once          # one discovery window
 python -m grok_bot.main --discover-loop          # bounded @goal discovery
 python -m grok_bot.main --discovery-status      # reports/discovery_status.md
+python -m grok_bot.main --dashboard             # http://127.0.0.1:8800
 pytest
 ```
 
