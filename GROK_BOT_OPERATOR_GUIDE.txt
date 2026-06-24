@@ -240,28 +240,337 @@ Read-only — no control actions from the dashboard.
 /opt/grok-bot-1/loop/skills/risk.md           — kill-switch rules
 
 ================================================================================
-12. ARCHITECTURE (six pieces × five stages)
+12. HOW THE LOOP ENGINE WORKS (module-by-module)
 ================================================================================
 
-Six pieces:
-  Automation  — loop/runner.py (@loop, @goal)
-  Skills      — loop/skills/*.md
-  State       — loop/state.py (STATE.md + state.json)
-  Verifier    — loop/verifier.py (numeric gates)
-  Worktrees   — loop/orchestrator.py
-  Connectors  — loop/connectors/ (TV webhook, SQLite, notifier)
+Core idea from loop engineering:
+  - The LLM (Grok/Claude) FORGETS between runs.
+  - The LOOP does NOT — STATE.md, skill files, and JSONL logs survive restarts.
+  - You engineer the loop in code; the agents run inside it.
 
-Five stages (loop/driver.py + grok_bot/daemon.py):
-  1. Ingest   — polymarket + CEX + Chainlink + TV
-  2. Signal   — fair value + Grok maker
-  3. Verify   — numeric + Claude checker
-  4. Execute  — paper fill only
-  5. Monitor  — risk + self-improvement
+Heartbeat (every cycle):
+  data → signal → verify → execute → monitor → memory → repeat
 
-Hermes Agent (optional, vendored in hermes-agent/):
+Two runtimes use the same loop/ package:
+
+  A) VPS DAEMON (production) — grok_bot/daemon.py
+     Runs forever, one real BTC 5m window every 300 seconds.
+     Uses Btc5mWindowEngine (live Polymarket + CEX + Chainlink + TV).
+     Also serves dashboard :8800 and TradingView webhook :8799.
+
+  B) DISCOVERY LOOP (batch) — loop/discovery_engine.py
+     Runs @goal until edge proven OR window/time budget exhausted.
+     Uses factory.build_discovery_engine() with ingest/propose callables.
+     Invoked via: python -m grok_bot.main --discover-loop
+
+--------------------------------------------------------------------------------
+12.1  MODULE MAP
+--------------------------------------------------------------------------------
+
+| Module                      | Piece        | What it does                          |
+|-----------------------------|--------------|---------------------------------------|
+| loop/runner.py              | Automation   | @loop, @goal, run_loop, run_goal      |
+| loop/skills.py + skills/    | Skills       | Read/append procedure manuals         |
+| loop/state.py               | State        | STATE.md + state.json persistence     |
+| loop/verifier.py            | Verifier     | Pure numeric promotion gates          |
+| loop/orchestrator.py        | Worktrees    | Parallel git worktree workers         |
+| loop/connectors/            | Connectors   | TV webhook, SQLite, Slack/console     |
+| loop/driver.py              | Five stages  | DiscoveryLoop cycle orchestrator      |
+| loop/discovery_engine.py    | @goal shell  | ProfitDiscoveryEngine bounded search  |
+| loop/self_improve.py        | Memory       | Analyst→reviewer lesson pipeline      |
+| grok_bot/window_engine.py   | Live window  | One real 5m Polymarket cycle          |
+| grok_bot/analyst.py         | Self-improve | Grok proposes lessons, Claude reviews |
+| grok_bot/evidence.py        | Metrics      | WindowRecord store + promotion_rung   |
+| grok_bot/pipeline.py        | Maker path   | build_signal_candidate + checker      |
+| grok_bot/daemon.py          | VPS entry    | Wires everything for 24/7 run         |
+
+--------------------------------------------------------------------------------
+12.2  AUTOMATION — loop/runner.py
+--------------------------------------------------------------------------------
+
+Two trigger types (from the loop engineering blueprint):
+
+  @loop(interval_seconds=N)
+    Cadence trigger. Fires on a timer regardless of outcome.
+    Used for: per-window paper cycle, per-minute risk checks.
+    run_loop(fn) executes fn repeatedly until max_iterations or max_seconds.
+
+  @goal
+    Condition trigger. Runs until a CODE-CHECKED condition is True.
+    Used for: "accumulate windows until calibration armed OR 5000 windows."
+    run_goal(step, condition) calls step(i) each iteration, then checks
+    condition() — never trusts an LLM saying "I'm done."
+
+Hard caps on every loop (prevents infinite runaway):
+  max_iterations  (default 1,000–10,000)
+  max_seconds     (default 86,400 = 24h)
+
+ProfitDiscoveryEngine uses run_goal() with condition = any_armed.
+
+--------------------------------------------------------------------------------
+12.3  SKILLS — loop/skills.py + loop/skills/*.md
+--------------------------------------------------------------------------------
+
+Skill files are procedure manuals the loop reads every cycle. They compound
+institutional memory across restarts.
+
+Files:
+  loop/skills/alpha_research.md  — how signals/thresholds are chosen
+  loop/skills/verification.md  — checker rules (numeric gates)
+  loop/skills/risk.md            — kill-switch and drawdown rules
+
+Functions:
+  read_skill(name)     — load skill markdown at cycle start
+  append_lesson(name, lesson) — append to "## Lessons learned" section
+
+Self-improvement flow writes confirmed lessons here. Example entry:
+  - 2026-06-24: Lost on window 42 (DOWN). New rule: raise min_edge_bps
+    when leading_confidence < 0.5.
+
+The analyst (Grok) proposes lessons; the reviewer (Claude) must approve
+before append_lesson() is called. Threshold changes are staged but only take
+effect after re-validation on the next cycle.
+
+--------------------------------------------------------------------------------
+12.4  STATE — loop/state.py
+--------------------------------------------------------------------------------
+
+The loop's spine — read at start of every cycle, written at end.
+
+LoopState fields (state.json):
+  schema_version      — migration support
+  windows_processed   — total cycles completed
+  mode                — "profit_discovery"
+  current_rung        — observe | shadow | armed
+  discovery_status    — same as rung, for dashboard
+  last_verdict        — observe | paper_fill | rejected_* | edge_proven
+  open_positions      — list of paper fills in memory
+  kill_events         — drawdown / risk halt log
+  live_signoff        — {approved: false} until human commits
+  updated_at          — ISO timestamp
+
+StateManager:
+  read()              — load from reports/loop_state/state.json
+  write(state)        — persist JSON + regenerate STATE.md
+  append_kill_event() — add risk event, persist immediately
+  live_enabled()      — returns live_signoff.approved (always false for now)
+
+On VPS restart, daemon resumes from windows_processed — no progress lost.
+
+--------------------------------------------------------------------------------
+12.5  VERIFIER — loop/verifier.py
+--------------------------------------------------------------------------------
+
+Independent checker. The maker (Grok) NEVER grades its own work.
+
+verify_signal(signal, rules) → Verdict(passed, reasons, evidence)
+
+Default numeric gates (all code-checked, not LLM claims):
+  Sharpe ratio        > 1.5
+  Max drawdown        < 10%
+  Newey-West t-stat   > 2.0
+  Out-of-sample years >= 2.0
+
+Returns Verdict with:
+  passed   — True only if ALL gates pass
+  reasons  — list of failures (e.g. "sharpe 0.00 < 1.5")
+  evidence — numeric values used in the check
+
+Two-layer checking in production (grok_bot/pipeline.py):
+  1. verify_signal()     — pure Python, always runs first
+  2. ClaudeVerifier      — LLM checker, can veto even if numeric passes
+
+promotion_rung() in grok_bot/evidence.py uses separate portfolio/calibration
+gates for the observe → shadow → armed ladder (see section 8).
+
+--------------------------------------------------------------------------------
+12.6  FIVE STAGES — loop/driver.py (DiscoveryLoop)
+--------------------------------------------------------------------------------
+
+DiscoveryLoop.run_cycle() orchestrates one full pass:
+
+  Stage 1 — INGEST
+    Calls ingest() callable → dict with price_stack, edge_bps, p_up, etc.
+    On failure: log ingest error, write state, return early.
+
+  Stage 2 — SIGNAL (maker proposes, no self-grading)
+    Calls propose(data) → signal dict or None.
+    None = no candidate this window (observe only).
+    Maker (Grok) may influence proposal via grok_bot/pipeline.py but does
+    NOT run verification here.
+
+  Stage 3 — VERIFY (checker)
+    verify_signal(signal) → if failed, set last_verdict=rejected, stop.
+
+  Stage 4 — EXECUTE (paper only)
+    submit_order(signal, paper=True) → simulated fill.
+    paper=False raises LiveTradingDisabledError — structurally impossible.
+
+  Stage 5 — MONITOR
+    _drawdown() across open paper positions.
+    If drawdown > max_drawdown (5%): clear positions, append_kill_event.
+    If verify passed and drawdown OK: current_rung → shadow.
+
+Returns list[CycleResult] — one entry per stage with ok/detail/verdict.
+
+--------------------------------------------------------------------------------
+12.7  PROFIT DISCOVERY — loop/discovery_engine.py
+--------------------------------------------------------------------------------
+
+ProfitDiscoveryEngine wraps DiscoveryLoop in a @goal search:
+
+  North star: discover whether real edge exists — NOT deploy capital.
+
+  status() — single-screen answer "have we found profit yet?"
+    Reads EvidenceStore + StateManager.
+    Returns: mode, rung, headline, blockers, portfolio, calibration.
+
+  run() — bounded discovery loop:
+    run_goal(step, condition=any_armed)
+    Stops when:
+      (a) promotion_rung hits "armed"  → stop_reason=edge_proven
+      (b) max_windows or max_seconds hit → stop_reason=budget_exhausted
+    Notifies operator via loop/connectors/notifier.py on promotion/armed.
+
+  _persist_cycle() — after each window:
+    Appends WindowRecord to reports/windows.jsonl
+    Updates state.json rung and windows_processed
+    Fires promotion notification on rung change
+
+Config (env vars):
+  DISCOVERY_MAX_WINDOWS  (default 500, VPS .env may set 5000)
+  DISCOVERY_MAX_SECONDS  (default 86400, VPS .env may set 604800)
+
+--------------------------------------------------------------------------------
+12.8  SELF-IMPROVEMENT — loop/self_improve.py + grok_bot/analyst.py
+--------------------------------------------------------------------------------
+
+"The article's rule: every loss writes a new rule."
+
+Pipeline (maker ≠ checker, dual verification):
+
+  1. Grok ANALYST (grok_bot/analyst.py propose_lesson)
+     Receives loss bundle: last loss window, direction, edge, PnL.
+     Proposes ProposedChange: lesson text + threshold_key + new_value.
+
+  2. PRE-CHECK (loop/self_improve.py pre_check_change) — pure Python
+     - threshold_key not in FROZEN_KEYS (paper_only, live_signoff, min_oos_years)
+     - new_value within bounds
+     - supporting_signal passes verify_signal()
+
+  3. Claude REVIEWER (grok_bot/analyst.py reviewer_approves)
+     Independent LLM grades the proposed change.
+
+  4. APPLY (loop/self_improve.py dual_verify → apply_confirmed_lesson)
+     Appends lesson to loop/skills/alpha_research.md.
+     Threshold change staged — re-validated next cycle before taking effect.
+
+Daemon triggers self-improvement every 10 windows (if >= 3 trades exist).
+
+--------------------------------------------------------------------------------
+12.9  CONNECTORS — loop/connectors/
+--------------------------------------------------------------------------------
+
+  tradingview.py
+    TvSignalStore     — in-memory + append to tradingview_signals.jsonl
+    parse_alert()     — normalizes long/short/up/down to UP/DOWN
+    serve()           — HTTP POST webhook on port 8799 (daemon thread)
+    Path: /tv/<TRADINGVIEW_WEBHOOK_SECRET>
+
+  notifier.py
+    notify(message, level) — prints JSON log line
+    If SLACK_WEBHOOK_URL set → POST to Slack (never blocks loop on failure)
+
+  sqlite_store.py
+    SqliteStore.append_cycle() — optional metrics DB for cycle payloads
+
+--------------------------------------------------------------------------------
+12.10  WORKTREES — loop/orchestrator.py
+--------------------------------------------------------------------------------
+
+spawn_worktrees(repo_root, specs) — creates isolated git worktrees under
+worktrees/ for parallel strategy variants (Directional, FinalSeconds, etc.).
+
+n_trials_from_specs(specs) — feeds walk-forward deflated Sharpe correction
+so data-mined Sharpe cannot pass with inflated trial count.
+
+Script: scripts/spawn_worktrees.sh
+
+--------------------------------------------------------------------------------
+12.11  LIVE WINDOW ENGINE — grok_bot/window_engine.py (VPS path)
+--------------------------------------------------------------------------------
+
+Btc5mWindowEngine.run_window() — one real 5-minute Polymarket cycle:
+
+  1. PolymarketClient.discover_current() → btc-updown-5m-* market slug
+  2. Fetch UP/DOWN orderbook mids from CLOB API
+  3. ChainlinkReader.read() → settlement price at window open
+  4. WindowIngestor.ingest() → PriceStack (Binance + Coinbase + TV + CL)
+  5. build_signal_candidate() → Grok maker overlay on signal dict
+  6. verify_signal() → numeric gate
+  7. verify_with_checker() → Claude gate
+  8. submit_order(paper=True) if UP or DOWN direction confirmed
+
+Returns: {action, data, signal, pnl, market, reasons}
+
+Daemon calls this every 300s, appends to EvidenceStore, updates StateManager,
+writes discovery report, runs self-improvement, checks promotion.
+
+--------------------------------------------------------------------------------
+12.12  DATA FLOW (VPS daemon — one 5-minute window)
+--------------------------------------------------------------------------------
+
+  TradingView alert ──POST──► TvSignalStore ──┐
+  Binance/Coinbase  ──HTTP──► PriceStack      ├──► WindowIngestor
+  Chainlink RPC     ──HTTP──► ChainlinkReader ┘         │
+  Polymarket CLOB   ──HTTP──► market + book            ▼
+                                              build_signal_candidate()
+                                                       │
+                                              Grok Maker (bias/size)
+                                                       ▼
+                                              verify_signal() [Python]
+                                                       │
+                                              ClaudeVerifier [LLM]
+                                                       ▼
+                                              submit_order(paper=True)
+                                                       │
+                       ┌───────────────────────────────┴────────────────┐
+                       ▼                                                ▼
+              reports/windows.jsonl                          reports/loop_state/
+              EvidenceStore.append()                       state.json + STATE.md
+                       │                                                │
+                       └────────────► promotion_rung() ◄────────────────┘
+                                              │
+                       ┌──────────────────────┼──────────────────────┐
+                       ▼                      ▼                      ▼
+              discovery_status.json    dashboard :8800      notifier (Slack)
+              (every window)           /api/status           on promotion
+
+--------------------------------------------------------------------------------
+12.13  WHAT PERSISTS ACROSS RESTART
+--------------------------------------------------------------------------------
+
+  reports/loop_state/state.json   — cursor position, rung, kill events
+  reports/loop_state/STATE.md     — human-readable same info
+  reports/windows.jsonl           — full evidence trail (append-only)
+  reports/discovery_status.json   — latest promotion snapshot
+  reports/tradingview_signals.jsonl — all TV alerts received
+  loop/skills/alpha_research.md   — lessons learned (grows over time)
+
+What does NOT persist (rebuilt each cycle):
+  In-memory TvSignalStore signals (reloaded from jsonl on restart)
+  DiscoveryLoop._positions (open paper positions in memory)
+
+--------------------------------------------------------------------------------
+12.14  HERMES AGENT (optional, vendored in hermes-agent/)
+--------------------------------------------------------------------------------
+
   bash scripts/setup_hermes.sh
   bash scripts/link_hermes_skills.sh
   bash scripts/install_hermes_cron.sh
+
+Hermes provides additional agent orchestration; Grok-Bot-1 loop/ package
+is the trading-specific profit discovery engine that runs independently.
 
 ================================================================================
 13. SAFETY RULES (non-negotiable)
