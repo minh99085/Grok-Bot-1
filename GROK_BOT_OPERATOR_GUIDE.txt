@@ -1,0 +1,319 @@
+================================================================================
+GROK-BOT-1 — COMPLETE OPERATOR GUIDE
+================================================================================
+Generated: 2026-06-24
+Repo:     https://github.com/minh99085/Grok-Bot-1
+Market:   Polymarket BTC Up/Down 5-minute windows (btc-updown-5m-*)
+Mode:     Paper-only profit discovery (live trading structurally disabled)
+
+================================================================================
+1. YOUR URLS (VPS: 45.32.224.147)
+================================================================================
+
+PAPER TRAINING DASHBOARD (monitor run — auto-starts with daemon)
+  http://45.32.224.147:8800/
+  API:  http://45.32.224.147:8800/api/status
+  Private (if DASHBOARD_TOKEN set in .env):
+  http://45.32.224.147:8800/dash/<DASHBOARD_TOKEN>
+
+TRADINGVIEW WEBHOOK (set alert to POST here after deploy)
+  http://45.32.224.147:8799/tv/<TRADINGVIEW_WEBHOOK_SECRET>
+  Get <TRADINGVIEW_WEBHOOK_SECRET> from /opt/grok-bot-1/.env on VPS
+  (auto-generated on first deploy if left blank)
+
+SSH TO VPS
+  ssh root@45.32.224.147
+
+================================================================================
+2. API KEYS & SECRETS (.env — NEVER commit to git)
+================================================================================
+
+Create /opt/grok-bot-1/.env on the VPS (copy from .env.example).
+
+Required:
+  XAI_API_KEY=          # Grok maker — get from https://console.x.ai
+  ANTHROPIC_API_KEY=    # Claude checker — get from https://console.anthropic.com
+                        # (alias CLAUDE_API_KEY also works)
+
+Auto-generated on first deploy (or set manually):
+  TRADINGVIEW_WEBHOOK_SECRET=
+  DASHBOARD_TOKEN=              # optional — locks dashboard to /dash/<token>
+
+Recommended defaults (already in .env.example):
+  XAI_MODEL=grok-4.20-0309-non-reasoning
+  CLAUDE_MODEL=claude-sonnet-4-20250514
+  PAPER_ONLY=true
+  TRADINGVIEW_HOST=0.0.0.0
+  TRADINGVIEW_PORT=8799
+  DASHBOARD_HOST=0.0.0.0
+  DASHBOARD_PORT=8800
+  DASHBOARD_PUBLIC_HOST=45.32.224.147
+  ETH_RPC_URLS=https://ethereum-rpc.publicnode.com,https://1rpc.io/eth
+  CEX_MAX_STALENESS_MS=5000
+  CHAINLINK_MAX_AGE_MS=120000
+  DISCOVERY_MAX_WINDOWS=5000
+  DISCOVERY_MAX_SECONDS=604800
+
+================================================================================
+3. VPS DEPLOYMENT (one-time + updates)
+================================================================================
+
+FIRST INSTALL (on VPS as root):
+
+  git clone https://github.com/minh99085/Grok-Bot-1.git /opt/grok-bot-1
+  cd /opt/grok-bot-1
+  cp .env.example .env
+  nano .env                    # paste XAI_API_KEY and ANTHROPIC_API_KEY
+  bash deploy/vps_setup.sh
+
+UPDATE AFTER git push:
+
+  cd /opt/grok-bot-1
+  git pull origin main
+  bash deploy/vps_setup.sh
+
+FROM WINDOWS (after SSH key configured):
+
+  cd C:\Users\tieut\Grok-Bot-1
+  .\deploy\local_push_env.ps1
+
+DOCKER COMMANDS ON VPS:
+
+  cd /opt/grok-bot-1
+  docker compose logs -f grok-bot          # live logs
+  docker compose ps                        # container status
+  docker compose restart grok-bot        # restart bot
+  docker compose exec grok-bot python -m grok_bot.main --discovery-status
+  docker compose exec grok-bot python -m grok_bot.main --risk-check
+  docker compose exec grok-bot python -m grok_bot.main --verify
+
+FIREWALL PORTS (opened by vps_setup.sh):
+  22   — SSH
+  8799 — TradingView webhook
+  8800 — Paper training dashboard
+
+Also open 8799 and 8800 in Vultr cloud firewall if SSH works but URLs don't.
+
+================================================================================
+4. TRADINGVIEW ALERT SETUP (you configure later)
+================================================================================
+
+Indicator: Hermes BTC Pulse (or your custom BTCUSDT signal)
+Symbol:    BTCUSDT
+Webhook:   POST to http://45.32.224.147:8799/tv/<TRADINGVIEW_WEBHOOK_SECRET>
+
+Alert message body (JSON):
+
+{
+  "symbol": "BTCUSDT",
+  "direction": "long",
+  "strength": "strong",
+  "indicator": "hermes_pulse",
+  "price": {{close}},
+  "ttc_s": 120
+}
+
+Direction values accepted: long/short, up/down, buy/sell, bull/bear
+Strength values: strong, weak, or numeric
+
+Signals are logged to: reports/tradingview_signals.jsonl
+
+================================================================================
+5. WHAT THE BOT DOES (every 5 minutes)
+================================================================================
+
+Loop cycle:
+  data → signal → verify → execute → monitor → memory → repeat
+
+Stage 1 — Data ingestion
+  - Polymarket CLOB: discover btc-updown-5m-* market + orderbook
+  - Binance BTCUSDT + Coinbase BTC-USD (leading CEX prices)
+  - TradingView webhook signals (leading direction)
+  - Chainlink BTC/USD on-chain (settlement truth only)
+
+Stage 2 — Signal generation (Grok MAKER)
+  - Computes p_up, edge_bps from leading stack vs window open
+  - Grok proposes risk bias/size overlay (never self-grades)
+
+Stage 3 — Verification (CHECKER)
+  - Numeric gates: Sharpe > 1.5, drawdown < 10%, Newey-West t > 2.0, OOS >= 2y
+  - Claude independently reviews signal — rejects even if numeric passes
+
+Stage 4 — Execution
+  - Paper fill only (submit_order with paper=False raises error)
+
+Stage 5 — Risk monitoring
+  - Drawdown breaker, kill events logged to STATE.md
+  - Self-improvement every 10 windows: Grok proposes lesson → Claude reviews
+
+================================================================================
+6. LLM ROLES (maker ≠ checker)
+================================================================================
+
+| Role     | Provider        | Env var           | Job                          |
+|----------|-----------------|-------------------|------------------------------|
+| Maker    | Grok / xAI      | XAI_API_KEY       | Alpha proposals, risk overlay|
+| Checker  | Claude          | ANTHROPIC_API_KEY | Independent signal review    |
+| Analyst  | Grok (maker)    | XAI_API_KEY       | Proposes lessons from losses |
+| Reviewer | Claude (checker)| ANTHROPIC_API_KEY | Approves lessons before write|
+
+================================================================================
+7. PRICE FEED STACK (where edge comes from)
+================================================================================
+
+Tier 1 — LEADING (fast)              Tier 2 — SETTLEMENT (slow)
+─────────────────────                ───────────────────────────
+Binance BTCUSDT                      Chainlink BTC/USD on-chain
+Coinbase BTC-USD          →edge→     (window open/end truth only)
+TradingView BTCUSDT alerts
+
+p_up and edge_bps = leading stack vs window open price.
+Chainlink = reconciliation / settlement only — NOT the nowcast signal.
+
+================================================================================
+8. PROFIT DISCOVERY RUNGS (paper training goals)
+================================================================================
+
+observe  → accumulating windows, no paper trades yet
+shadow   → paper trading, evidence building, blockers may remain
+armed    → proven OOS edge under discovery gates (notifies operator)
+
+Promotion requires (code-checked, not LLM claim):
+  - >= 20 paper trades
+  - total PnL > 0
+  - profit factor >= 1.0
+  - calibration armed (Brier proxy < 0.22 on >= 20 trades)
+
+Live trading requires ADDITIONAL human sign-off in state.json — not implemented.
+
+Blockers shown on dashboard: no_paper_trades, insufficient_sample,
+  total_pnl_not_positive, profit_factor_below_1, calibration_not_armed
+
+================================================================================
+9. DASHBOARD — WHAT YOU SEE
+================================================================================
+
+URL: http://45.32.224.147:8800/  (refreshes every 15 seconds)
+
+Displays:
+  - Mode, promotion rung, headline
+  - Paper portfolio: trades, PnL, win rate, profit factor
+  - Calibration: sample N, Brier proxy, armed status
+  - Blockers preventing promotion
+  - Action counts (observe, paper_fill, rejected_*)
+  - Kill events
+  - Recent 25 windows table
+  - TradingView signal count
+  - Maker/checker status, risk halt flag
+
+Read-only — no control actions from the dashboard.
+
+================================================================================
+10. LOCAL DEVELOPMENT COMMANDS
+================================================================================
+
+  pip install -e ".[dev]"
+  cp .env.example .env
+  python -m grok_bot.main --verify              # offline safety checks
+  python -m grok_bot.main --daemon              # full VPS loop locally
+  python -m grok_bot.main --dashboard           # http://127.0.0.1:8800
+  python -m grok_bot.main --tradingview-webhook # webhook only
+  python -m grok_bot.main --discover-once       # one discovery cycle
+  python -m grok_bot.main --discover-loop       # bounded @goal loop
+  python -m grok_bot.main --discovery-status  # write reports/discovery_status.md
+  python -m grok_bot.main --risk-check
+  pytest                                        # 27 tests
+
+================================================================================
+11. KEY FILES & LOGS ON VPS
+================================================================================
+
+/opt/grok-bot-1/.env                          — secrets (not in git)
+/opt/grok-bot-1/reports/windows.jsonl         — all window evidence
+/opt/grok-bot-1/reports/discovery_status.json — promotion snapshot
+/opt/grok-bot-1/reports/discovery_status.md   — human-readable status
+/opt/grok-bot-1/reports/loop_state/state.json — machine loop memory
+/opt/grok-bot-1/reports/loop_state/STATE.md   — human loop memory
+/opt/grok-bot-1/reports/tradingview_signals.jsonl — TV alert log
+/opt/grok-bot-1/loop/skills/alpha_research.md — growing lessons/rules
+/opt/grok-bot-1/loop/skills/verification.md   — checker rules
+/opt/grok-bot-1/loop/skills/risk.md           — kill-switch rules
+
+================================================================================
+12. ARCHITECTURE (six pieces × five stages)
+================================================================================
+
+Six pieces:
+  Automation  — loop/runner.py (@loop, @goal)
+  Skills      — loop/skills/*.md
+  State       — loop/state.py (STATE.md + state.json)
+  Verifier    — loop/verifier.py (numeric gates)
+  Worktrees   — loop/orchestrator.py
+  Connectors  — loop/connectors/ (TV webhook, SQLite, notifier)
+
+Five stages (loop/driver.py + grok_bot/daemon.py):
+  1. Ingest   — polymarket + CEX + Chainlink + TV
+  2. Signal   — fair value + Grok maker
+  3. Verify   — numeric + Claude checker
+  4. Execute  — paper fill only
+  5. Monitor  — risk + self-improvement
+
+Hermes Agent (optional, vendored in hermes-agent/):
+  bash scripts/setup_hermes.sh
+  bash scripts/link_hermes_skills.sh
+  bash scripts/install_hermes_cron.sh
+
+================================================================================
+13. SAFETY RULES (non-negotiable)
+================================================================================
+
+1. Paper-only: grok_bot/safety.py blocks live orders (paper=False raises)
+2. Maker ≠ Checker: Grok never validates its own signals
+3. Numeric gates run before Claude; Claude can veto
+4. No promotion on LLM self-claim — only code-checked metrics
+5. Self-improvement lessons need dual verification before skill write
+6. API keys only in .env — never commit keys to git
+
+================================================================================
+14. TROUBLESHOOTING
+================================================================================
+
+Dashboard not loading:
+  - Check docker: docker compose ps
+  - Check port 8800 open in Vultr firewall
+  - docker compose logs grok-bot
+
+TradingView alerts not arriving:
+  - Confirm URL includes correct TRADINGVIEW_WEBHOOK_SECRET
+  - Check reports/tradingview_signals.jsonl on VPS
+  - Test: curl -X POST http://45.32.224.147:8799/tv/<SECRET> \
+      -H "Content-Type: application/json" \
+      -d '{"symbol":"BTCUSDT","direction":"long","strength":"strong","price":64000}'
+
+Bot not trading (observe only):
+  - Normal during profit discovery — check blockers on dashboard
+  - Need edge_bps >= 3 and leading_confidence >= 0.35
+  - Or valid TradingView signal + numeric + Claude approval
+
+SSH timeout from local machine:
+  - Use Termius/direct VPS console
+  - Run deploy commands on VPS directly
+
+================================================================================
+15. QUICK REFERENCE CARD
+================================================================================
+
+Dashboard:     http://45.32.224.147:8800/
+TV Webhook:    http://45.32.224.147:8799/tv/<SECRET>
+VPS:           root@45.32.224.147
+Install dir:   /opt/grok-bot-1
+Logs:          docker compose logs -f grok-bot
+Status:        docker compose exec grok-bot python -m grok_bot.main --discovery-status
+Mode:          profit_discovery (paper-only)
+Market:        Polymarket BTC 5m Up/Down
+Maker:         Grok (XAI_API_KEY)
+Checker:       Claude (ANTHROPIC_API_KEY)
+
+================================================================================
+END OF GUIDE — keep this file; update .env secrets separately on the VPS.
+================================================================================

@@ -2,6 +2,8 @@
 
 Blueprint for a **self-improving, loop-engineered AI hedge fund** on Polymarket — built to run alpha research, verify signals, and trade while you sleep.
 
+**Full operator guide (URLs, keys, deploy, TradingView, dashboard):** [`GROK_BOT_OPERATOR_GUIDE.txt`](GROK_BOT_OPERATOR_GUIDE.txt)
+
 This repo has no application code yet. It holds three reference documents that together define *what* to trade, *how* to run it autonomously, and *how not to fail quietly*.
 
 **Author of source material:** [Roan @RohOnChain](https://x.com/RohOnChain) — backend developer focused on prediction-market quant systems and HFT-style execution.
