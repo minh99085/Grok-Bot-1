@@ -1,0 +1,20 @@
+[
+  {
+    "name": "grok-bot-discovery-cycle",
+    "schedule": "*/5 * * * *",
+    "command": "cd ${GROK_BOT_ROOT} && python -m grok_bot.main --discover-once",
+    "description": "Run one profit-discovery paper window cycle"
+  },
+  {
+    "name": "grok-bot-discovery-report",
+    "schedule": "0 * * * *",
+    "command": "cd ${GROK_BOT_ROOT} && python -m grok_bot.main --discovery-status",
+    "description": "Refresh profit discovery status report"
+  },
+  {
+    "name": "grok-bot-risk-monitor",
+    "schedule": "* * * * *",
+    "command": "cd ${GROK_BOT_ROOT} && python -m grok_bot.main --risk-check",
+    "description": "Parallel risk monitor kill-switch check"
+  }
+]

@@ -15,7 +15,9 @@ DEFAULT_STATE_DIR = Path(__file__).resolve().parent / "state"
 class LoopState:
     schema_version: int = 1
     windows_processed: int = 0
+    mode: str = "profit_discovery"
     current_rung: str = "observe"
+    discovery_status: str = "observe"
     last_verdict: str = "pending"
     open_positions: list[dict[str, Any]] = field(default_factory=list)
     last_lesson_id: str | None = None
@@ -69,7 +71,9 @@ class StateManager:
             "",
             f"- **Updated:** {state.updated_at}",
             f"- **Windows processed:** {state.windows_processed}",
+            f"- **Mode:** {state.mode}",
             f"- **Promotion rung:** {state.current_rung}",
+            f"- **Discovery status:** {state.discovery_status}",
             f"- **Last verdict:** {state.last_verdict}",
             f"- **Open positions:** {len(state.open_positions)}",
             f"- **Last lesson:** {state.last_lesson_id or 'none'}",

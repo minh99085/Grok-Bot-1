@@ -4,7 +4,7 @@ from loop.runner import goal, run_goal, run_loop
 def test_run_goal_stops_on_condition():
     n = {"i": 0}
 
-    def step():
+    def step(_i: int):
         n["i"] += 1
 
     ok, iters = run_goal(step, lambda: n["i"] >= 3, max_iterations=100)

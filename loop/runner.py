@@ -76,18 +76,18 @@ def run_loop(fn: Callable[[], Any], *, interval_seconds: float | None = None) ->
 
 
 def run_goal(
-    step: Callable[[], Any],
+    step: Callable[[int], Any],
     condition: Callable[[], bool],
     *,
     max_iterations: int = 1_000,
     max_seconds: float = 86_400.0,
 ) -> tuple[bool, int]:
-    """Run step until condition is True or caps hit. Condition is code-checked only."""
+    """Run step(i) until condition is True or caps hit. Condition is code-checked only."""
     started = time.monotonic()
     iterations = 0
     while iterations < max_iterations and (time.monotonic() - started) < max_seconds:
-        step()
-        iterations += 1
         if condition():
             return True, iterations
-    return False, iterations
+        step(iterations)
+        iterations += 1
+    return condition(), iterations

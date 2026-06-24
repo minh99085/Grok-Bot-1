@@ -10,6 +10,7 @@ venv/
 .pytest_cache/
 .mypy_cache/
 reports/
+hermes-agent/
 loop/state/state.json
 loop/state/STATE.md
 !loop/state/.gitkeep

@@ -11,8 +11,11 @@ from typing import Any
 
 from grok_bot.claude_verifier import ClaudeVerifier
 from grok_bot.config import BotConfig
+from grok_bot.discovery_report import write_discovery_report
+from grok_bot.factory import build_discovery_engine
 from grok_bot.grok_maker import GrokMaker
 from grok_bot.pipeline import PipelineContext, build_signal_candidate, verify_with_checker
+from grok_bot.risk import risk_check
 from grok_bot.safety import LiveTradingDisabledError, submit_order
 from loop.connectors.tradingview import TvSignalStore, serve
 from loop.driver import DiscoveryLoop
@@ -105,27 +108,55 @@ def verify() -> int:
         checks["cycle_ran"] = len(results) >= 4
         checks["state_persisted"] = state.windows_processed == 1
 
+    with tempfile.TemporaryDirectory() as tmp:
+        engine = build_discovery_engine(scripted=True, state_root=Path(tmp) / "state", reports_dir=Path(tmp) / "reports")
+        checks["profit_discovery_engine"] = engine.status()["mode"] == "profit_discovery"
+
+    checks["hermes_agent_present"] = Path("hermes-agent").exists() or Path("scripts/setup_hermes.sh").exists()
+
     print(json.dumps(checks, indent=2))
     return 0 if all(checks.values()) else 1
 
 
-def discover_once() -> int:
+def discover_once(*, scripted: bool = False) -> int:
+    from loop.discovery_engine import DiscoveryConfig
+
     cfg = BotConfig.from_env()
-    mgr = StateManager()
-    loop = DiscoveryLoop(state_mgr=mgr, ingest=_scripted_ingest, propose=_pipeline_propose)
-    results = loop.run_cycle()
+    engine = build_discovery_engine(cfg, scripted=scripted)
+    engine.config = DiscoveryConfig(max_windows=1, max_seconds=120.0)
+    outcome = engine.run()
+    status = write_discovery_report(engine, Path("reports"))
     print(
         json.dumps(
-            {
-                "llm_roles": cfg.llm_roles(),
-                "results": [r.__dict__ for r in results],
-                "status": loop.discovery_status(),
-            },
+            {"llm_roles": cfg.llm_roles(), "outcome": outcome.__dict__, "discovery": status},
             indent=2,
             default=str,
         )
     )
     return 0
+
+
+def discover_loop(*, scripted: bool = False) -> int:
+    cfg = BotConfig.from_env()
+    engine = build_discovery_engine(cfg, scripted=scripted)
+    outcome = engine.run(interval_seconds=0.0)
+    write_discovery_report(engine, Path("reports"))
+    print(json.dumps(outcome.__dict__, indent=2, default=str))
+    return 0
+
+
+def discovery_status_cmd() -> int:
+    engine = build_discovery_engine(scripted=False)
+    status = write_discovery_report(engine, Path("reports"))
+    print(json.dumps(status, indent=2, default=str))
+    return 0
+
+
+def risk_check_cmd() -> int:
+    mgr = StateManager(Path("reports/loop_state"))
+    result = risk_check(mgr)
+    print(json.dumps(result, indent=2))
+    return 1 if result.get("halt") else 0
 
 
 def run_tradingview_webhook() -> int:
@@ -162,7 +193,11 @@ def run_tradingview_webhook() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(prog="grok-bot")
     parser.add_argument("--verify", action="store_true", help="offline safety + loop checks")
-    parser.add_argument("--discover-once", action="store_true", help="one paper discovery cycle")
+    parser.add_argument("--discover-once", action="store_true", help="one profit-discovery cycle")
+    parser.add_argument("--discover-loop", action="store_true", help="bounded profit-discovery @goal loop")
+    parser.add_argument("--discovery-status", action="store_true", help="write/read discovery status report")
+    parser.add_argument("--risk-check", action="store_true", help="parallel risk monitor check")
+    parser.add_argument("--scripted", action="store_true", help="use scripted feeds (tests/offline)")
     parser.add_argument(
         "--tradingview-webhook",
         action="store_true",
@@ -173,7 +208,13 @@ def main() -> int:
     if args.verify:
         return verify()
     if args.discover_once:
-        return discover_once()
+        return discover_once(scripted=args.scripted)
+    if args.discover_loop:
+        return discover_loop(scripted=args.scripted)
+    if args.discovery_status:
+        return discovery_status_cmd()
+    if args.risk_check:
+        return risk_check_cmd()
     if args.tradingview_webhook:
         return run_tradingview_webhook()
     parser.print_help()

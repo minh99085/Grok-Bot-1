@@ -263,6 +263,16 @@ Numeric gates in `loop/verifier.py` always run first. Claude is a second checker
 
 Webhook URL: `http://<vps-host>:8799/tv/<TRADINGVIEW_WEBHOOK_SECRET>`
 
+### Hermes Agent + profit discovery
+
+```bash
+bash scripts/setup_hermes.sh          # clone https://github.com/nousresearch/hermes-agent
+bash scripts/link_hermes_skills.sh    # link SKILL.md into ~/.hermes/skills
+bash scripts/install_hermes_cron.sh   # register cron jobs (requires hermes CLI)
+```
+
+Bot starts in **`profit_discovery`** mode: paper-only, rungs `observe → shadow → armed | no_edge_found`.
+
 ### Quick start
 
 ```bash
@@ -270,7 +280,9 @@ pip install -e ".[dev]"
 cp .env.example .env   # set XAI_API_KEY, ANTHROPIC_API_KEY, TRADINGVIEW_WEBHOOK_SECRET
 python -m grok_bot.main --verify
 python -m grok_bot.main --tradingview-webhook   # receive BTCUSDT alerts
-python -m grok_bot.main --discover-once
+python -m grok_bot.main --discover-once          # one discovery window
+python -m grok_bot.main --discover-loop          # bounded @goal discovery
+python -m grok_bot.main --discovery-status      # reports/discovery_status.md
 pytest
 ```
 
