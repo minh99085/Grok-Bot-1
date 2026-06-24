@@ -217,6 +217,27 @@ Top extractor: **$2.0M** from 4,049 trades (~$496/trade). Not luck — mathemati
 | `grok_bot/` — CLI, paper-only safety lock | Grok API wiring (maker/checker roles) |
 | Skill files + verifier + state persistence | VPS deployment |
 
+## Price feed stack (edge source)
+
+Leading feeds move **before** Polymarket's Chainlink settlement oracle updates. The bot trades the lag.
+
+```
+Tier 1 — LEADING (fast)          Tier 2 — SETTLEMENT (slow)
+─────────────────────────        ───────────────────────────
+Binance BTCUSDT                  Chainlink BTC/USD on-chain
+Coinbase BTC-USD        →edge→   (window open/end truth only)
+TradingView BTCUSDT alerts
+```
+
+| Feed | Role | Used for |
+|---|---|---|
+| **Binance** | Leading CEX | Nowcast price, freshness |
+| **Coinbase** | Leading CEX | Cross-venue confirmation |
+| **TradingView** | Leading signal | Direction + price from alerts |
+| **Chainlink** | Settlement truth | Window open/end — **not** the nowcast |
+
+`p_up` and `edge_bps` are computed from leading stack vs window open. Chainlink is reconciliation only.
+
 ## LLM roles + signal feeds
 
 | Role | Provider | Responsibility |

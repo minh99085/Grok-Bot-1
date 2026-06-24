@@ -36,6 +36,10 @@ def build_signal_candidate(
         claude_review=None,
     )
 
+    stack = market.get("price_stack") or {}
+    edge_bps = float(market.get("edge_bps", stack.get("edge_bps", 0)))
+    p_up = float(market.get("p_up", stack.get("p_up", 0.5)))
+
     base = {
         "name": "btc_5m_directional",
         "symbol": market.get("symbol", "btc-updown-5m"),
@@ -43,7 +47,11 @@ def build_signal_candidate(
         "max_drawdown": float(market.get("max_drawdown", 1)),
         "newey_west_t": float(market.get("newey_west_t", 0)),
         "oos_years": float(market.get("oos_years", 0)),
-        "edge": float(market.get("edge", 0)),
+        "edge": edge_bps / 10_000.0,
+        "edge_bps": edge_bps,
+        "p_up": p_up,
+        "implied_direction": market.get("implied_direction", stack.get("implied_direction")),
+        "leading_confidence": float(market.get("leading_confidence", stack.get("leading_confidence", 0))),
         "notional": float(market.get("notional", 100)),
     }
 
@@ -64,7 +72,12 @@ def build_signal_candidate(
         if md.called and md.size_hint <= 0:
             return None, ctx
 
-    if base["sharpe"] <= 0 and not ctx.tv_signal:
+    min_edge_bps = float(market.get("min_edge_bps", 3.0))
+    min_confidence = float(market.get("min_leading_confidence", 0.35))
+    has_model_edge = edge_bps >= min_edge_bps and base["leading_confidence"] >= min_confidence
+    has_backtest_edge = base["sharpe"] > 0
+
+    if not has_model_edge and not has_backtest_edge and not ctx.tv_signal:
         return None, ctx
 
     return base, ctx

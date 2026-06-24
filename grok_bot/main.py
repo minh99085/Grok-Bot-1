@@ -21,17 +21,41 @@ from loop.verifier import verify_signal
 
 
 def _scripted_ingest() -> dict[str, Any]:
-    return {
-        "symbol": "btc-updown-5m",
-        "mid": 0.51,
-        "sharpe": 1.8,
-        "max_drawdown": 0.04,
-        "newey_west_t": 2.5,
-        "oos_years": 2.5,
-        "edge": 0.02,
-        "notional": 100.0,
-        "ts": "scripted",
-    }
+    import os
+    import time
+
+    from grok_bot.ingest import scripted_ingestor
+    from grok_bot.reference_feeds import PriceSample
+    from loop.connectors.tradingview import TvSignalStore, parse_alert
+
+    now = int(time.time() * 1000)
+
+    def cex_fn(ts: int):
+        return [
+            PriceSample("binance", 64120.0, ts, ts),
+            PriceSample("coinbase", 64110.0, ts, ts),
+        ]
+
+    def chain_http(_url, _payload, _timeout):
+        answer = int(64000 * 1e8)
+        word = format(answer, "064x")
+        updated = format(int(time.time()), "064x")
+        return {"result": "0x" + ("0" * 64) + word + ("0" * 64) + updated + ("0" * 64)}
+
+    tv = TvSignalStore(os.devnull)
+    tv.add(parse_alert({"symbol": "BTCUSDT", "direction": "UP", "price": 64125.0}, now_ms=now))
+    ing = scripted_ingestor(cex_fn=cex_fn, chainlink_fn=chain_http, tv_store=tv, window_start=64000.0)
+    data = ing.ingest(now_ms=now)
+    data.update(
+        sharpe=1.8,
+        max_drawdown=0.04,
+        newey_west_t=2.5,
+        oos_years=2.5,
+        notional=100.0,
+        min_edge_bps=1.0,
+        min_leading_confidence=0.2,
+    )
+    return data
 
 
 def _pipeline_propose(data: dict[str, Any]) -> dict[str, Any] | None:

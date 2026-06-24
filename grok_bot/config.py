@@ -26,6 +26,11 @@ class BotConfig:
     tradingview_port: int = 8799
     tradingview_signals_path: str = "reports/tradingview_signals.jsonl"
 
+    # Chainlink settlement (lagging oracle — not used as leading signal)
+    eth_rpc_urls: str = ""
+    chainlink_max_age_ms: int = 120_000
+    cex_max_staleness_ms: int = 5000
+
     paper_only: bool = True
 
     @classmethod
@@ -41,6 +46,9 @@ class BotConfig:
             tradingview_signals_path=_env(
                 "TRADINGVIEW_SIGNALS_PATH", "reports/tradingview_signals.jsonl"
             ),
+            eth_rpc_urls=_env("ETH_RPC_URLS"),
+            chainlink_max_age_ms=int(_env("CHAINLINK_MAX_AGE_MS", "120000") or "120000"),
+            cex_max_staleness_ms=int(_env("CEX_MAX_STALENESS_MS", "5000") or "5000"),
             paper_only=_env("PAPER_ONLY", "true").lower() in ("1", "true", "yes", "on"),
         )
 

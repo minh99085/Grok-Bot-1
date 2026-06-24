@@ -2,7 +2,13 @@
 
 ## Goal
 
-Generate Polymarket signal candidates from ingested market data and **TradingView BTCUSDT** alerts. Propose only — never self-grade. Maker model: **Grok/xAI**.
+Generate Polymarket signal candidates using the **leading price stack** (Binance → Coinbase → TradingView) ahead of **Chainlink settlement**. Propose only — never self-grade. Maker model: **Grok/xAI**.
+
+## Feed priority
+
+1. Binance BTCUSDT + Coinbase BTC-USD (CEX nowcast)
+2. TradingView BTCUSDT alert (direction + price)
+3. Chainlink BTC/USD (settlement truth only — never use as leading signal)
 
 ## Rules
 
