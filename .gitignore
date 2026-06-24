@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.env
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+reports/
+loop/state/state.json
+loop/state/STATE.md
+!loop/state/.gitkeep
