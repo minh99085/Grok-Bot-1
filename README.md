@@ -266,10 +266,16 @@ Webhook URL: `http://<vps-host>:8799/tv/<TRADINGVIEW_WEBHOOK_SECRET>`
 ### Hermes Agent + profit discovery
 
 ```bash
-bash scripts/setup_hermes.sh          # clone https://github.com/nousresearch/hermes-agent
+git clone --recurse-submodules https://github.com/minh99085/Grok-Bot-1.git
+# or if already cloned:
+git submodule update --init --recursive
+
+bash scripts/setup_hermes.sh          # init hermes-agent submodule
 bash scripts/link_hermes_skills.sh    # link SKILL.md into ~/.hermes/skills
 bash scripts/install_hermes_cron.sh   # register cron jobs (requires hermes CLI)
 ```
+
+`hermes-agent/` is a **git submodule** pointing to [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent).
 
 Bot starts in **`profit_discovery`** mode: paper-only, rungs `observe → shadow → armed | no_edge_found`.
 
