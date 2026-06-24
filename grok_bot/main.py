@@ -203,6 +203,11 @@ def main() -> int:
         action="store_true",
         help="start BTCUSDT TradingView alert webhook server",
     )
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="VPS profit-discovery daemon (5m BTC up/down loop)",
+    )
     args = parser.parse_args()
 
     if args.verify:
@@ -217,6 +222,11 @@ def main() -> int:
         return risk_check_cmd()
     if args.tradingview_webhook:
         return run_tradingview_webhook()
+    if args.daemon:
+        from grok_bot.daemon import run_daemon
+
+        run_daemon(BotConfig.from_env())
+        return 0
     parser.print_help()
     return 0
 

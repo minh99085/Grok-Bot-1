@@ -212,10 +212,26 @@ Top extractor: **$2.0M** from 4,049 trades (~$496/trade). Not luck — mathemati
 
 | Included | Not included yet |
 |---|---|
-| Architecture blueprint (3 reference files) | Polymarket live data feeds |
+| Architecture blueprint (3 reference files) | Live order routing (structurally disabled) |
 | `loop/` — six pieces + five-stage driver | Frank-Wolfe / Gurobi optimization engine |
-| `grok_bot/` — CLI, paper-only safety lock | Grok API wiring (maker/checker roles) |
-| Skill files + verifier + state persistence | VPS deployment |
+| `grok_bot/` — CLI, daemon, paper-only safety lock | Human sign-off gate for live trading |
+| Grok maker + Claude checker + TV webhook | |
+| Polymarket CLOB + Chainlink + CEX price stack | |
+| Self-improvement analyst loop + VPS deploy (`deploy/`) | |
+
+### VPS deployment (Vultr)
+
+```bash
+# On VPS as root (45.32.224.147):
+git clone https://github.com/minh99085/Grok-Bot-1.git /opt/grok-bot-1
+cd /opt/grok-bot-1
+cp .env.example .env   # set XAI_API_KEY, ANTHROPIC_API_KEY
+bash deploy/vps_setup.sh
+```
+
+TradingView alert URL after deploy:
+
+`http://45.32.224.147:8799/tv/<TRADINGVIEW_WEBHOOK_SECRET>`
 
 ## Price feed stack (edge source)
 
@@ -292,7 +308,5 @@ pytest
 
 ### Build order (remaining)
 
-1. Wire Grok/xAI maker + checker with dual-verification guard
-2. Add Polymarket CLOB + Chainlink read-only connectors
-3. Paper discovery loop on `btc-updown-5m-*` windows
-4. Layer integer-programming / Bregman stack from math roadmap
+1. Layer integer-programming / Bregman stack from math roadmap
+2. Walk-forward arming with human sign-off for any live milestone

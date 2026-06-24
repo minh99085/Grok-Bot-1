@@ -1,0 +1,16 @@
+services:
+  grok-bot:
+    build: .
+    container_name: grok-bot-1
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./reports:/app/reports
+    ports:
+      - "8799:8799"
+    command: python -m grok_bot.main --daemon
+    healthcheck:
+      test: ["CMD", "python", "-m", "grok_bot.main", "--verify"]
+      interval: 1h
+      timeout: 30s
+      retries: 1
