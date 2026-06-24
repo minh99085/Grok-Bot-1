@@ -217,12 +217,39 @@ Top extractor: **$2.0M** from 4,049 trades (~$496/trade). Not luck — mathemati
 | `grok_bot/` — CLI, paper-only safety lock | Grok API wiring (maker/checker roles) |
 | Skill files + verifier + state persistence | VPS deployment |
 
+## LLM roles + signal feeds
+
+| Role | Provider | Responsibility |
+|---|---|---|
+| **Maker** | Grok / xAI (`XAI_API_KEY`) | Alpha proposals, risk overlay bias/size hints |
+| **Checker** | Claude / Anthropic (`ANTHROPIC_API_KEY`) | Independent signal review — never self-grades |
+| **External feed** | TradingView webhook | BTCUSDT alert signals → `reports/tradingview_signals.jsonl` |
+
+Numeric gates in `loop/verifier.py` always run first. Claude is a second checker layer; if Claude rejects, the signal is killed even when numeric checks pass.
+
+### TradingView alert JSON (example)
+
+```json
+{
+  "symbol": "BTCUSDT",
+  "direction": "long",
+  "strength": "strong",
+  "indicator": "hermes_pulse",
+  "price": 64000.0,
+  "ttc_s": 120
+}
+```
+
+Webhook URL: `http://<vps-host>:8799/tv/<TRADINGVIEW_WEBHOOK_SECRET>`
+
 ### Quick start
 
 ```bash
 pip install -e ".[dev]"
-python -m grok_bot.main --verify      # offline safety + loop checks
-python -m grok_bot.main --discover-once  # one paper discovery cycle
+cp .env.example .env   # set XAI_API_KEY, ANTHROPIC_API_KEY, TRADINGVIEW_WEBHOOK_SECRET
+python -m grok_bot.main --verify
+python -m grok_bot.main --tradingview-webhook   # receive BTCUSDT alerts
+python -m grok_bot.main --discover-once
 pytest
 ```
 

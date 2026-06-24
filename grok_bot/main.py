@@ -5,30 +5,38 @@ from __future__ import annotations
 import argparse
 import json
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
+from grok_bot.claude_verifier import ClaudeVerifier
+from grok_bot.config import BotConfig
+from grok_bot.grok_maker import GrokMaker
+from grok_bot.pipeline import PipelineContext, build_signal_candidate, verify_with_checker
+from grok_bot.safety import LiveTradingDisabledError, submit_order
+from loop.connectors.tradingview import TvSignalStore, serve
 from loop.driver import DiscoveryLoop
 from loop.state import StateManager
 from loop.verifier import verify_signal
-from grok_bot.safety import LiveTradingDisabledError, submit_order
 
 
 def _scripted_ingest() -> dict[str, Any]:
-    return {"symbol": "btc-updown-5m", "mid": 0.51, "ts": "scripted"}
-
-
-def _scripted_propose(data: dict[str, Any]) -> dict[str, Any] | None:
     return {
-        "name": "directional_observe",
-        "symbol": data["symbol"],
+        "symbol": "btc-updown-5m",
+        "mid": 0.51,
         "sharpe": 1.8,
         "max_drawdown": 0.04,
         "newey_west_t": 2.5,
         "oos_years": 2.5,
         "edge": 0.02,
         "notional": 100.0,
+        "ts": "scripted",
     }
+
+
+def _pipeline_propose(data: dict[str, Any]) -> dict[str, Any] | None:
+    signal, _ctx = build_signal_candidate(data)
+    return signal
 
 
 def verify() -> int:
@@ -49,9 +57,25 @@ def verify() -> int:
     checks["verifier_passes_good"] = good.passed
     checks["verifier_rejects_bad"] = not bad.passed
 
+    cfg = BotConfig()
+    checks["config_loads"] = cfg.paper_only is True
+
+    claude = ClaudeVerifier(
+        api_key="test",
+        transport=lambda _k, _m, _s, _u: {"approved": True, "reasons": [], "confidence": 0.9},
+    )
+    verdict, _ = verify_with_checker(
+        {"sharpe": 2.0, "max_drawdown": 0.05, "newey_west_t": 2.5, "oos_years": 2.5},
+        PipelineContext(
+            market={}, tv_signal=None, maker=None, numeric_verdict=None, claude_review=None
+        ),
+        claude=claude,
+    )
+    checks["claude_checker_path"] = verdict.passed
+
     with tempfile.TemporaryDirectory() as tmp:
         mgr = StateManager(Path(tmp))
-        loop = DiscoveryLoop(state_mgr=mgr, ingest=_scripted_ingest, propose=_scripted_propose)
+        loop = DiscoveryLoop(state_mgr=mgr, ingest=_scripted_ingest, propose=_pipeline_propose)
         results = loop.run_cycle()
         state = mgr.read()
         checks["cycle_ran"] = len(results) >= 4
@@ -62,23 +86,72 @@ def verify() -> int:
 
 
 def discover_once() -> int:
+    cfg = BotConfig.from_env()
     mgr = StateManager()
-    loop = DiscoveryLoop(state_mgr=mgr, ingest=_scripted_ingest, propose=_scripted_propose)
+    loop = DiscoveryLoop(state_mgr=mgr, ingest=_scripted_ingest, propose=_pipeline_propose)
     results = loop.run_cycle()
-    print(json.dumps({"results": [r.__dict__ for r in results], "status": loop.discovery_status()}, indent=2, default=str))
+    print(
+        json.dumps(
+            {
+                "llm_roles": cfg.llm_roles(),
+                "results": [r.__dict__ for r in results],
+                "status": loop.discovery_status(),
+            },
+            indent=2,
+            default=str,
+        )
+    )
+    return 0
+
+
+def run_tradingview_webhook() -> int:
+    cfg = BotConfig.from_env()
+    store = TvSignalStore(cfg.tradingview_signals_path)
+    httpd = serve(
+        store,
+        host=cfg.tradingview_host,
+        port=cfg.tradingview_port,
+        token=cfg.tradingview_webhook_secret,
+    )
+    path = f"/tv/{cfg.tradingview_webhook_secret}" if cfg.tradingview_webhook_secret else "/"
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "host": cfg.tradingview_host,
+                "port": cfg.tradingview_port,
+                "path": path,
+                "symbol": "BTCUSDT",
+                "signals_file": cfg.tradingview_signals_path,
+            },
+            indent=2,
+        )
+    )
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        httpd.shutdown()
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="grok-bot")
     parser.add_argument("--verify", action="store_true", help="offline safety + loop checks")
-    parser.add_argument("--discover-once", action="store_true", help="run one paper discovery cycle")
+    parser.add_argument("--discover-once", action="store_true", help="one paper discovery cycle")
+    parser.add_argument(
+        "--tradingview-webhook",
+        action="store_true",
+        help="start BTCUSDT TradingView alert webhook server",
+    )
     args = parser.parse_args()
 
     if args.verify:
         return verify()
     if args.discover_once:
         return discover_once()
+    if args.tradingview_webhook:
+        return run_tradingview_webhook()
     parser.print_help()
     return 0
 

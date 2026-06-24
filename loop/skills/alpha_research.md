@@ -2,7 +2,7 @@
 
 ## Goal
 
-Generate Polymarket signal candidates from ingested market data. Propose only — never self-grade.
+Generate Polymarket signal candidates from ingested market data and **TradingView BTCUSDT** alerts. Propose only — never self-grade. Maker model: **Grok/xAI**.
 
 ## Rules
 

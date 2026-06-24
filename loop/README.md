@@ -11,7 +11,7 @@ Operational shell implementing the six pieces and five stages from the Grok-Bot-
 | State | `state.py` — `STATE.md` + `state.json` |
 | Verifier | `verifier.py` — pure-function checker |
 | Worktrees | `orchestrator.py`, `scripts/spawn_worktrees.sh` |
-| Connectors | `connectors/` — SQLite metrics + Slack/console notifier |
+| Connectors | `connectors/` — SQLite metrics, TradingView BTCUSDT webhook, Slack/console notifier |
 
 ## Five stages
 
