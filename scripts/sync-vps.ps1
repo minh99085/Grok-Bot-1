@@ -24,9 +24,12 @@ Set-Location $RepoRoot
 function Get-ShortSha([string]$sha) { if ($sha.Length -ge 7) { $sha.Substring(0, 7) } else { $sha } }
 
 function Invoke-SshCmd([string]$RemoteCmd) {
-    $out = & ssh.exe -i $SshKey -o ConnectTimeout=20 -o StrictHostKeyChecking=no "${VpsUser}@${VpsHost}" $RemoteCmd 2>$null
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $out = & ssh.exe -i $SshKey -o ConnectTimeout=20 -o StrictHostKeyChecking=no "${VpsUser}@${VpsHost}" $RemoteCmd
+    $ErrorActionPreference = $prev
     if ($null -eq $out) { return "" }
-    if ($out -is [array]) { return ($out[-1]).ToString().Trim() }
+    if ($out -is [array]) { return ($out[-1] | Out-String).Trim() }
     return "$out".Trim()
 }
 
@@ -62,10 +65,23 @@ if ($local -ne $origin) {
     }
 }
 
-$ErrorActionPreference = "Continue"
-$vpsHeadRaw = Invoke-SshCmd "if test -d $VpsRepo/.git; then git -C $VpsRepo rev-parse HEAD; else echo MISSING; fi"
-$ErrorActionPreference = "Stop"
-$vpsHead = if ($vpsHeadRaw) { "$vpsHeadRaw".Trim() } else { "MISSING" }
+function Get-VpsHead {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $raw = & ssh.exe -i $SshKey -o ConnectTimeout=20 -o StrictHostKeyChecking=no "${VpsUser}@${VpsHost}" "git -C $VpsRepo rev-parse HEAD"
+    $ErrorActionPreference = $prev
+    if (-not $raw) { return "MISSING" }
+    $head = if ($raw -is [array]) { "$($raw[-1])" } else { "$raw" }
+    $head = $head.Trim()
+    if ($head.Length -ne 40) { return "MISSING" }
+    return $head
+}
+
+$vpsHead = Get-VpsHead
+if ($vpsHead -eq "MISSING") {
+    Start-Sleep -Seconds 2
+    $vpsHead = Get-VpsHead
+}
 
 Write-Host "origin/main : $(Get-ShortSha $origin) $origin"
 Write-Host "VPS HEAD    : $(Get-ShortSha $vpsHead) $vpsHead"
@@ -83,7 +99,7 @@ if ($vpsHead -eq $origin) {
 }
 
 if ($vpsHead -eq "MISSING" -or $vpsHead.Length -ne 40) {
-    Write-Host "First deploy: cloning repo on VPS..."
+    Write-Host "Bootstrap VPS repo (git HEAD unavailable on first probe)..."
     $bootstrap = @"
 set -e
 sudo mkdir -p $VpsRepo
