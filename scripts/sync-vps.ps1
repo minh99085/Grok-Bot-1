@@ -23,6 +23,22 @@ Set-Location $RepoRoot
 
 function Get-ShortSha([string]$sha) { if ($sha.Length -ge 7) { $sha.Substring(0, 7) } else { $sha } }
 
+function Invoke-SshCmd([string]$RemoteCmd) {
+    $out = & ssh.exe -i $SshKey -o ConnectTimeout=20 -o StrictHostKeyChecking=no "${VpsUser}@${VpsHost}" $RemoteCmd 2>$null
+    if ($null -eq $out) { return "" }
+    if ($out -is [array]) { return ($out[-1]).ToString().Trim() }
+    return "$out".Trim()
+}
+
+function Invoke-SshScript([string]$Body) {
+    $localScript = Join-Path $env:TEMP "grok-bot1-remote-$([Guid]::NewGuid().ToString('N')).sh"
+    $remoteScript = "/tmp/grok-bot1-remote-$([Guid]::NewGuid().ToString('N')).sh"
+    [IO.File]::WriteAllText($localScript, $Body)
+    & scp.exe -i $SshKey -o StrictHostKeyChecking=no $localScript "${VpsUser}@${VpsHost}:$remoteScript"
+    Invoke-SshCmd "bash $remoteScript; rm -f $remoteScript"
+    Remove-Item $localScript -Force -ErrorAction SilentlyContinue
+}
+
 $doRebuild = -not $SkipRebuild
 Write-Host "BOT1 deploy -> $VpsUser@${VpsHost}:$VpsRepo"
 
@@ -46,13 +62,10 @@ if ($local -ne $origin) {
     }
 }
 
-$sshArgs = @("-i", $SshKey, "-o", "ConnectTimeout=20", "-o", "StrictHostKeyChecking=no", "${VpsUser}@${VpsHost}")
-
-function Invoke-SshScript([string]$Body) {
-    $Body | ssh @sshArgs "bash -s"
-}
-
-$vpsHead = (ssh @sshArgs "if test -d $VpsRepo/.git; then git -C $VpsRepo rev-parse HEAD; else echo MISSING; fi").Trim()
+$ErrorActionPreference = "Continue"
+$vpsHeadRaw = Invoke-SshCmd "if test -d $VpsRepo/.git; then git -C $VpsRepo rev-parse HEAD; else echo MISSING; fi"
+$ErrorActionPreference = "Stop"
+$vpsHead = if ($vpsHeadRaw) { "$vpsHeadRaw".Trim() } else { "MISSING" }
 
 Write-Host "origin/main : $(Get-ShortSha $origin) $origin"
 Write-Host "VPS HEAD    : $(Get-ShortSha $vpsHead) $vpsHead"
@@ -69,7 +82,7 @@ if ($vpsHead -eq $origin) {
     Write-Error "SYNC FAIL - VPS diverged from origin/main."
 }
 
-if ($vpsHead -eq "MISSING" -or $vpsHead.Length -lt 40) {
+if ($vpsHead -eq "MISSING" -or $vpsHead.Length -ne 40) {
     Write-Host "First deploy: cloning repo on VPS..."
     $bootstrap = @"
 set -e
@@ -85,7 +98,7 @@ git clean -fd
 echo VPS_HEAD=`$(git rev-parse HEAD)
 "@
     Invoke-SshScript $bootstrap
-    $vpsHead = (ssh @sshArgs "git -C $VpsRepo rev-parse HEAD").Trim()
+    $vpsHead = (Invoke-SshCmd "git -C $VpsRepo rev-parse HEAD").Trim()
 }
 
 $bundle = Join-Path $env:TEMP "grok-bot1-sync.bundle"
@@ -95,7 +108,7 @@ if ($vpsHead -ne $origin) {
     if (-not (Test-Path $bundle)) {
         Write-Error "Bundle creation failed. VPS=$vpsHead origin=$origin"
     }
-    scp -i $SshKey -o StrictHostKeyChecking=no $bundle "${VpsUser}@${VpsHost}:/tmp/grok-bot1-sync.bundle"
+    & scp.exe -i $SshKey -o StrictHostKeyChecking=no $bundle "${VpsUser}@${VpsHost}:/tmp/grok-bot1-sync.bundle"
     $remote = @"
 set -e
 cd $VpsRepo
@@ -125,7 +138,7 @@ docker ps --format '{{.Names}} {{.Status}}' | grep -E 'hermes-training|hermes-tr
     Invoke-SshScript $docker
 }
 
-$vpsAfter = (ssh @sshArgs "git -C $VpsRepo rev-parse HEAD").Trim()
+$vpsAfter = (Invoke-SshCmd "git -C $VpsRepo rev-parse HEAD").Trim()
 if ($vpsAfter -ne $origin) {
     Write-Error "SYNC FAIL after deploy: VPS=$vpsAfter origin=$origin"
 }
