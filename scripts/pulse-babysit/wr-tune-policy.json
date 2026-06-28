@@ -41,6 +41,7 @@
   },
   "starvation_guard": {
     "never_lower_min_entry_price_below": 0.45,
+    "skip_when_directional_disabled": true,
     "skip_wr_tune_issue_codes": [
       "trade_starvation",
       "trade_starvation_streak"

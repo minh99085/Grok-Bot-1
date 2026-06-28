@@ -1,7 +1,7 @@
 {
   "schema": "grok_bot_profile/1.0",
   "bot_id": "bot1",
-  "strategy_id": "sweet_spot_only_v1",
+  "strategy_id": "arb_first_perfect_wr_v1",
   "github": "https://github.com/minh99085/Grok-Bot-1",
   "local_workspace": "C:\\Users\\tieut\\Grok-Bot-1",
   "vps_host": "45.32.227.242",

@@ -20,7 +20,7 @@ if not ENV_PATH.exists():
 # re-enabled in babysit/autopilot fixes. See .grok/rules/tv-observe-only-lock.md
 
 UPDATES = {
-    "PULSE_DASHBOARD_BOT_LABEL": "Bot 1 · sweet 0.47-0.55",
+    "PULSE_DASHBOARD_BOT_LABEL": "Bot 1 · arb-first perfect-WR",
     "TRADINGVIEW_WEBHOOK_MIRROR_URL": "",
     # Grok observe-only: decide + grade every window, never place/size a trade.
     "PULSE_GROK_DECIDER_MODE": "shadow",
@@ -140,12 +140,16 @@ UPDATES = {
     # 5m brain (scan/LCMM child) + 15m hands (directional + parent). No 5m directional.
     "PULSE_SERIES_SLUGS": "btc-up-or-down-5m,btc-up-or-down-15m",
     "PULSE_DIRECTIONAL_SERIES_SLUGS": "btc-up-or-down-15m",
-    "PULSE_ARB_EPSILON_15M": "0.03",
+    # Epsilon = fees + slippage floor (Polymarket BTC fees ~0); capture 0.02-0.04 residual band.
+    "PULSE_ARB_FEES": "0.0",
+    "PULSE_ARB_EPSILON": "0.02",
+    "PULSE_ARB_EPSILON_5M": "0.02",
+    "PULSE_ARB_EPSILON_15M": "0.02",
     "PULSE_DEPENDENCY_ARB_EPSILON": "0.02",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
-    # Profit-discovery Phase 1–2: arb-first, stop directional bleed.
-    "PULSE_ARB_EPSILON": "0.05",
+    # Arb-first perfect-WR lab: directional paused; only risk-free + dependency arb trade.
+    "PULSE_DIRECTIONAL_ENABLED": "0",
     "PULSE_ARB_MAX_USD": "300",
     "PULSE_PRIMARY_EDGE_SOURCE": "arbitrage",
     "PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC": "0.10",
@@ -158,7 +162,7 @@ UPDATES = {
     "PULSE_GREEN_PATH_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_MAX_USD": "50",
     "PULSE_BREGMAN_PROJECTION_ENABLED": "1",
-    "PULSE_BREGMAN_TRADE_AUTHORITY": "1",
+    "PULSE_BREGMAN_TRADE_AUTHORITY": "0",
     "PULSE_BREGMAN_ALPHA": "0.9",
     "PULSE_BREGMAN_EPSILON_INIT": "0.1",
     "PULSE_BREGMAN_FW_MAX_ITERS": "50",
@@ -178,7 +182,8 @@ UPDATES = {
     "PULSE_LEARNING_RAMP_SAMPLES": "120",
     "PULSE_LEARNING_BENCH_MARGIN": "0.0",
     "PULSE_ARB_GLOBAL_MAX_OPEN_USD": "600",
-    "PULSE_ARB_NONATOMIC_ENABLED": "1",
+    # Step 2 guard: leg risk is the only way arb can lose — atomic complete-set only.
+    "PULSE_ARB_NONATOMIC_ENABLED": "0",
     "PULSE_ARB_NONATOMIC_SLIPPAGE_BPS": "50",
     "PULSE_SIZING_PROMOTION_GATED": "1",
     "HERMES_SIZING_ENABLED": "0",
@@ -242,8 +247,8 @@ for ln in lines:
 for key, val in remaining.items():
     out.append(f"{key}={val}")
 out.append(
-    "# LOOP ENGINE ARCH (2026-06-27): 5m brain/15m hands + Roan/Bregman Lane B "
-    "dual scan + dep arb execute + 15m DOWN green-path + TV observe-only"
+    "# LOOP ENGINE ARCH (2026-06-28): arb-first perfect-WR lab — directional OFF, "
+    "dual 5m+15m arb scan, atomic arb only, dep arb execute, Bregman observe-only"
 )
 ENV_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
 print(f"Wrote {ENV_PATH} ({len(UPDATES)} loop-arch keys)")

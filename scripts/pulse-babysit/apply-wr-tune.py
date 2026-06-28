@@ -199,7 +199,13 @@ def main() -> int:
 
     skipped_reason = None
     fixes: list[dict] = []
-    if _starvation_active(eval_issues, policy):
+    frozen_auth = frozen.get("authority_frozen") or {}
+    directional_on = frozen_auth.get("PULSE_DIRECTIONAL_ENABLED", "1") == "1"
+    if not directional_on and policy.get("starvation_guard", {}).get(
+        "skip_when_directional_disabled", True
+    ):
+        skipped_reason = "directional_disabled"
+    elif _starvation_active(eval_issues, policy):
         skipped_reason = "starvation_active"
     elif (state.get("goals") or {}).get("mode") != "real_money_discipline":
         skipped_reason = "not_real_money_discipline"
