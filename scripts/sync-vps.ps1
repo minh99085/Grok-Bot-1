@@ -47,7 +47,7 @@ if ($local -ne $origin) {
 }
 
 $sshArgs = @("-i", $SshKey, "-o", "ConnectTimeout=20", "-o", "StrictHostKeyChecking=no", "${VpsUser}@${VpsHost}")
-$vpsHead = (ssh @sshArgs "git -C $VpsRepo rev-parse HEAD 2>/dev/null || echo MISSING").Trim()
+$vpsHead = (ssh @sshArgs "bash -lc 'git -C $VpsRepo rev-parse HEAD 2>/dev/null || echo MISSING'").Trim()
 
 Write-Host "origin/main : $(Get-ShortSha $origin) $origin"
 Write-Host "VPS HEAD    : $(Get-ShortSha $vpsHead) $vpsHead"
