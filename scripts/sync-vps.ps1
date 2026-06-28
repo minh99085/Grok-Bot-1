@@ -47,7 +47,12 @@ if ($local -ne $origin) {
 }
 
 $sshArgs = @("-i", $SshKey, "-o", "ConnectTimeout=20", "-o", "StrictHostKeyChecking=no", "${VpsUser}@${VpsHost}")
-$vpsHead = (ssh @sshArgs "bash -lc 'git -C $VpsRepo rev-parse HEAD 2>/dev/null || echo MISSING'").Trim()
+
+function Invoke-SshScript([string]$Body) {
+    $Body | ssh @sshArgs "bash -s"
+}
+
+$vpsHead = (ssh @sshArgs "if test -d $VpsRepo/.git; then git -C $VpsRepo rev-parse HEAD; else echo MISSING; fi").Trim()
 
 Write-Host "origin/main : $(Get-ShortSha $origin) $origin"
 Write-Host "VPS HEAD    : $(Get-ShortSha $vpsHead) $vpsHead"
@@ -79,7 +84,7 @@ git reset --hard origin/main
 git clean -fd
 echo VPS_HEAD=`$(git rev-parse HEAD)
 "@
-    ssh @sshArgs $bootstrap
+    Invoke-SshScript $bootstrap
     $vpsHead = (ssh @sshArgs "git -C $VpsRepo rev-parse HEAD").Trim()
 }
 
@@ -100,7 +105,7 @@ git clean -fd
 rm -f /tmp/grok-bot1-sync.bundle
 echo VPS_HEAD=`$(git rev-parse HEAD)
 "@
-    ssh @sshArgs $remote
+    Invoke-SshScript $remote
     Remove-Item -Force $bundle -ErrorAction SilentlyContinue
 }
 
@@ -117,7 +122,7 @@ docker compose up -d --force-recreate --remove-orphans
 sleep 8
 docker ps --format '{{.Names}} {{.Status}}' | grep -E 'hermes-training|hermes-trading-engine'
 "@
-    ssh @sshArgs $docker
+    Invoke-SshScript $docker
 }
 
 $vpsAfter = (ssh @sshArgs "git -C $VpsRepo rev-parse HEAD").Trim()
