@@ -20,7 +20,7 @@
   "last_fixes": [],
   "last_health_verdict": null,
   "baseline_trades_at_deploy": 0,
-  "vps_sha": "3d75ce3",
+  "vps_sha": "1e7c8d5",
   "history": [],
   "babysit_autopilot": false,
   "note": "Bot1 pulse fork from Grok-Bot-2 — paired with bot2 on 45.32.224.147"
