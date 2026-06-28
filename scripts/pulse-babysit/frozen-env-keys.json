@@ -106,7 +106,7 @@
   "tunable_bounds": {
     "PULSE_MIN_EDGE": { "min": 0.008, "max": 0.015, "direction": "tighten_or_relax" },
     "PULSE_BASIS_BUFFER": { "min": 0.005, "max": 0.01, "direction": "tighten_or_relax" },
-    "PULSE_MAX_PRICE": { "min": 0.58, "max": 0.75, "direction": "tighten_or_relax" },
+    "PULSE_MAX_PRICE": { "min": 0.55, "max": 0.75, "direction": "tighten_or_relax" },
     "PULSE_MIN_REWARD_RISK": { "min": 0.45, "max": 0.55, "direction": "tighten_or_relax" },
     "PULSE_MIN_ENTRY_PRICE": { "min": 0.38, "max": 0.50, "direction": "tighten_or_relax" },
     "PULSE_STOP_MIN_SAMPLES": { "min": 60, "max": 120, "direction": "raise_only" }
