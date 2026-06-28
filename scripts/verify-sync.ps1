@@ -15,8 +15,8 @@ $ErrorActionPreference = "Continue"
 & git fetch origin main 2>&1 | Out-Null
 $ErrorActionPreference = $prevEap
 
-$origin = (git rev-parse origin/main).Trim()
-$vpsHead = (& ssh.exe -i $SshKey -o ConnectTimeout=20 -o StrictHostKeyChecking=no "${VpsUser}@${VpsHost}" "git -C $VpsRepo rev-parse HEAD").Trim()
+$origin = ("$(git rev-parse origin/main)".Trim()).ToLowerInvariant()
+$vpsHead = (& ssh.exe -i $SshKey -o ConnectTimeout=20 -o StrictHostKeyChecking=no "${VpsUser}@${VpsHost}" "git -C $VpsRepo rev-parse HEAD").Trim().ToLowerInvariant()
 
 Write-Host "origin/main : $($origin.Substring(0,7)) $origin"
 Write-Host "VPS HEAD    : $($vpsHead.Substring(0,7)) $vpsHead"

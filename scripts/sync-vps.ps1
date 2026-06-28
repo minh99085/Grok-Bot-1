@@ -1,5 +1,6 @@
 # Sync origin/main -> Bot 1 VPS, then ALWAYS down --remove-orphans -> build -> up --remove-orphans.
 # Policy: .grok/rules/vps-deploy-mandatory.md — never push without running this (except hands_off).
+[CmdletBinding()]
 param(
     [switch]$SkipRebuild,
     [switch]$Rebuild,
@@ -20,6 +21,11 @@ if ($RepoRoot -notmatch "Grok-Bot-1") {
     Write-Error "SAFETY: sync-vps.ps1 in Grok-Bot-1 only. Bot2 uses Grok-Bot-1 repo."
 }
 Set-Location $RepoRoot
+
+if ($VerifyOnly) {
+    & "$PSScriptRoot\verify-sync.ps1"
+    exit $LASTEXITCODE
+}
 
 function Get-ShortSha([string]$sha) { if ($sha.Length -ge 7) { $sha.Substring(0, 7) } else { $sha } }
 
@@ -65,22 +71,13 @@ if ($local -ne $origin) {
     }
 }
 
-function Get-VpsHead {
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $raw = & ssh.exe -i $SshKey -o ConnectTimeout=20 -o StrictHostKeyChecking=no "${VpsUser}@${VpsHost}" "git -C $VpsRepo rev-parse HEAD"
-    $ErrorActionPreference = $prev
-    if (-not $raw) { return "MISSING" }
-    $head = if ($raw -is [array]) { "$($raw[-1])" } else { "$raw" }
-    $head = $head.Trim()
-    if ($head.Length -ne 40) { return "MISSING" }
-    return $head
-}
+$origin = "$origin".Trim().ToLowerInvariant()
 
-$vpsHead = Get-VpsHead
-if ($vpsHead -eq "MISSING") {
+$vpsHead = (& ssh.exe -i $SshKey -o ConnectTimeout=20 -o StrictHostKeyChecking=no "${VpsUser}@${VpsHost}" "git -C $VpsRepo rev-parse HEAD").Trim().ToLowerInvariant()
+if ($vpsHead -notmatch '^[0-9a-f]{40}$') {
     Start-Sleep -Seconds 2
-    $vpsHead = Get-VpsHead
+    $vpsHead = (& ssh.exe -i $SshKey -o ConnectTimeout=20 -o StrictHostKeyChecking=no "${VpsUser}@${VpsHost}" "git -C $VpsRepo rev-parse HEAD").Trim().ToLowerInvariant()
+    if ($vpsHead -notmatch '^[0-9a-f]{40}$') { $vpsHead = "MISSING" }
 }
 
 Write-Host "origin/main : $(Get-ShortSha $origin) $origin"
@@ -88,14 +85,11 @@ Write-Host "VPS HEAD    : $(Get-ShortSha $vpsHead) $vpsHead"
 
 if ($vpsHead -eq $origin) {
     Write-Host "SYNC OK - VPS already matches origin/main."
-    if ($VerifyOnly) { exit 0 }
     if (-not $doRebuild) {
         Write-Warning "SkipRebuild set — containers NOT rebuilt (operator override only)."
         exit 0
     }
     Write-Host "REBUILD - code current; running orphan cleanup + full rebuild per deploy policy."
-} elseif ($VerifyOnly) {
-    Write-Error "SYNC FAIL - VPS diverged from origin/main."
 }
 
 if ($vpsHead -eq "MISSING" -or $vpsHead.Length -ne 40) {
