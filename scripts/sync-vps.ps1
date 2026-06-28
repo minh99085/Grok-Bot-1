@@ -1,4 +1,5 @@
-# Sync GitHub main -> Bot 1 VPS (45.32.227.242). Never targets Bot 2.
+# Sync origin/main -> Bot 1 VPS, then ALWAYS down --remove-orphans -> build -> up --remove-orphans.
+# Policy: .grok/rules/vps-deploy-mandatory.md — never push without running this (except hands_off).
 param(
     [switch]$SkipRebuild,
     [switch]$Rebuild,
@@ -34,7 +35,15 @@ $origin = (git rev-parse origin/main 2>$null).Trim()
 if (-not $origin) { $origin = $local }
 
 if ($local -ne $origin) {
-    Write-Error "Local HEAD ($local) != origin/main ($origin). Push or pull first."
+    $mergeBase = (git merge-base HEAD origin/main 2>$null).Trim()
+    if ($mergeBase -eq $local -and $local -ne $origin) {
+        Write-Host "Local behind origin/main — fast-forward pull..."
+        git pull --ff-only origin main
+        $local = (git rev-parse HEAD).Trim()
+    }
+    if ($local -ne $origin) {
+        Write-Error "Local HEAD ($local) != origin/main ($origin). Push or pull first."
+    }
 }
 
 $sshArgs = @("-i", $SshKey, "-o", "ConnectTimeout=20", "-o", "StrictHostKeyChecking=no", "${VpsUser}@${VpsHost}")
@@ -46,7 +55,11 @@ Write-Host "VPS HEAD    : $(Get-ShortSha $vpsHead) $vpsHead"
 if ($vpsHead -eq $origin) {
     Write-Host "SYNC OK - VPS already matches origin/main."
     if ($VerifyOnly) { exit 0 }
-    if (-not $doRebuild) { exit 0 }
+    if (-not $doRebuild) {
+        Write-Warning "SkipRebuild set — containers NOT rebuilt (operator override only)."
+        exit 0
+    }
+    Write-Host "REBUILD - code current; running orphan cleanup + full rebuild per deploy policy."
 } elseif ($VerifyOnly) {
     Write-Error "SYNC FAIL - VPS diverged from origin/main."
 }
@@ -113,4 +126,6 @@ if ($vpsAfter -ne $origin) {
 }
 
 Write-Host "BOT1 SYNC OK - VPS HEAD matches origin/main ($(Get-ShortSha $origin))."
-exit 0
+Write-Host "VERIFY - re-checking VPS HEAD vs origin/main..."
+& "$PSScriptRoot\verify-sync.ps1"
+exit $LASTEXITCODE

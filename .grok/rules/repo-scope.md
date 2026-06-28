@@ -22,30 +22,18 @@ If `phase: hands_off` and `now < hands_off_until`: pause all cycles/deploys; res
 
 ## VPS deploy — MANDATORY after every push to `main` (except hands_off)
 
-**Non-negotiable:** Whenever you commit and push to `origin/main`, you MUST immediately deploy to the live VPS with full orphan cleanup and rebuild — **unless** `state.json` is in `hands_off` phase. Do not tell the operator to run it — execute it yourself.
+**Full policy:** `.grok/rules/vps-deploy-mandatory.md`
 
-This applies to **every** push — engine/env, babysit scripts, `.grok` rules/skills, and report-only commits. Goal: `origin/main` HEAD == VPS HEAD always (paused during hands_off).
+**Non-negotiable:** Push → `.\scripts\sync-vps.ps1` (sync `origin/main` + orphan cleanup + rebuild) → verify. Execute yourself; never leave VPS stale.
 
-### Standard sequence (every code or env change)
+### Standard sequence
 
-1. `git push origin main`
-2. `.\scripts\sync-vps.ps1` from repo root (default — **never** use `-SkipRebuild` unless operator explicitly asks for code-only sync)
-   - Syncs git bundle to `/opt/Grok-Bot-1`
-   - `docker compose down --remove-orphans`
-   - `docker compose build` (both images — no service arg)
-   - `docker compose up -d --remove-orphans`
-3. On VPS: `python3 scripts/apply-loop-arch-env.py` (when env/gate keys changed)
-4. On VPS plugin dir: `docker compose up -d --force-recreate hermes-training` (loop runs in `hermes-training`; API alone is not enough)
-5. Verify: `.\scripts\verify-sync.ps1` — VPS HEAD SHA == `origin/main`; both containers healthy
+1. `git push origin main` (local `HEAD` == `origin/main`)
+2. `.\scripts\sync-vps.ps1` — sync VPS, apply env, validate frozen lock, `down --remove-orphans` → `build` → `up -d --force-recreate --remove-orphans`, then auto-runs `verify-sync.ps1`
+3. **Never** `-SkipRebuild` unless operator explicitly requests code-only sync in the current message
 
-### Never do
+### VPS access (Bot 1)
 
-- Push to `main` and leave VPS on an old SHA
-- `docker compose restart` or recreate a single service without `down --remove-orphans` → `build` → `up -d --remove-orphans`
-- Assume deploy is done because you pushed to GitHub only
-
-### VPS access
-
-- Host: `45.32.227.242`, user `root`, repo: `/opt/Grok-Bot-1`
+- Host: `45.32.227.242`, user `linuxuser`, repo: `/opt/Grok-Bot-1`
 - SSH key: `$env:USERPROFILE\.ssh\bot1_grok_temp`
 - Plugin compose: `/opt/Grok-Bot-1/hermes-agent-main/plugins/hermes-trading-engine`

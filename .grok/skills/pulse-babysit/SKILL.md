@@ -71,11 +71,9 @@ DEPLOY → SOAK (60m real-money default) → PULL → EVALUATE → (issues?) →
     `python -m pytest scripts/pulse-babysit/test_price_band_analysis.py -q` when WR tune changed.
 11. Commit with clear message; `git push origin main`.
 12. **MANDATORY VPS deploy** (never skip after any push to `main` — unless `hands_off`):
-    - `.\scripts\sync-vps.ps1` — `down --remove-orphans` → `build` → `up -d --remove-orphans`
-    - SSH: `python3 /opt/Grok-Bot-1/scripts/apply-loop-arch-env.py` if env/gates changed
-    - SSH: `python3 /opt/Grok-Bot-1/scripts/pulse-babysit/validate-frozen-lock.py` (wired in sync-vps)
-    - SSH: `cd .../hermes-trading-engine && docker compose up -d --force-recreate hermes-training`
-    - `.\scripts\verify-sync.ps1`
+    - See `.grok/rules/vps-deploy-mandatory.md`
+    - `.\scripts\sync-vps.ps1` — sync `origin/main` → VPS, apply env, validate frozen lock,
+      `down --remove-orphans` → `build` → `up -d --force-recreate --remove-orphans`, then verify
 13. Update state: `phase=soak`, `deployed_at`, `soak_until`, `last_fixes`, increment `cycle`.
 
 ## Env coupling (mandatory memory)

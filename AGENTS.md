@@ -1,4 +1,4 @@
-# Grok-Bot-2 — project rules
+# Grok-Bot-1 — project rules
 
 ## Quant team mandate (ALWAYS follow)
 
@@ -28,19 +28,12 @@ explicitly says otherwise **in the current message**. Full frozen keys and behav
 
 ## Repository scope (ALWAYS follow)
 
-- **Canonical repo:** `https://github.com/minh99085/Grok-Bot-2` — the **only** GitHub repository for code, commits, pushes, reports, and deploys.
+- **Canonical repo:** `https://github.com/minh99085/Grok-Bot-1` — the **only** GitHub repository for code, commits, pushes, reports, and deploys.
 - **Do not** clone, commit, or push to `hermes-agent-cursor` or any other repo unless the operator explicitly overrides this in the current message.
-- **Local workspace:** prefer `C:\Users\tieut\Grok-Bot-2` when working from this machine.
+- **Local workspace:** prefer `C:\Users\tieut\Grok-Bot-1` when working from this machine.
 - **Default branch:** `main`.
-- **VPS deploy (MANDATORY after every push to `main`):** You MUST run the full deploy yourself —
-  never push and stop. Sequence:
-  1. `git push origin main`
-  2. `.\scripts\sync-vps.ps1` — always default (sync + `down --remove-orphans` → `build` →
-     `up -d --remove-orphans`). **Never** `-SkipRebuild` unless operator explicitly requests it.
-  3. SSH: `python3 scripts/apply-loop-arch-env.py` when env/gates changed
-  4. SSH: `docker compose up -d --force-recreate hermes-training` in the plugin dir
-  5. `.\scripts\verify-sync.ps1` — VPS HEAD must equal `origin/main`
-  See `.grok/rules/repo-scope.md`.
+- **VPS deploy (MANDATORY after every push to `main`):** See `.grok/rules/vps-deploy-mandatory.md`.
+  Push → `.\scripts\sync-vps.ps1` (sync `origin/main` + orphan cleanup + rebuild + verify). **Never** `-SkipRebuild` unless operator explicitly requests it.
 
 ## Project layout
 
