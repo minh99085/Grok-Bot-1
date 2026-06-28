@@ -20,6 +20,8 @@ if not ENV_PATH.exists():
 # re-enabled in babysit/autopilot fixes. See .grok/rules/tv-observe-only-lock.md
 
 UPDATES = {
+    "PULSE_DASHBOARD_BOT_LABEL": "Bot 1 · sweet 0.47-0.55",
+    "TRADINGVIEW_WEBHOOK_MIRROR_URL": "",
     # Grok observe-only: decide + grade every window, never place/size a trade.
     "PULSE_GROK_DECIDER_MODE": "shadow",
     "PULSE_GROK_DECIDER_FOLLOW_FRACTION": "0",
