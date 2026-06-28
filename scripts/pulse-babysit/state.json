@@ -1,0 +1,26 @@
+{
+  "goals": {
+    "bot_id": "bot1",
+    "strategy_id": "sweet_spot_only_v1",
+    "mode": "real_money_discipline",
+    "win_rate_target": 0.8,
+    "win_rate_target_deferred": false,
+    "priority": "pnl_protection_and_win_rate",
+    "note": "Bot1 A/B test vs Bot2 — sweet-spot only 0.47-0.55. VPS 45.32.227.242"
+  },
+  "cycle": 0,
+  "phase": "deploy",
+  "soak_hours": 1,
+  "soak_minutes": 60,
+  "deployed_at": null,
+  "soak_until": null,
+  "last_eval_at": null,
+  "last_verdict": null,
+  "last_fixes": [],
+  "last_health_verdict": null,
+  "baseline_trades_at_deploy": 0,
+  "vps_sha": null,
+  "history": [],
+  "babysit_autopilot": false,
+  "note": "Bot1 pulse fork from Grok-Bot-2 — paired with bot2 on 45.32.224.147"
+}
