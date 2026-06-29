@@ -264,7 +264,7 @@ def _engine(tmp_path, *, mode, decision, follow_ok=True, policy_mode="explore", 
     cfg = PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0,
                       min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
                       settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
-                      grok_decider_mode=mode, data_dir=str(tmp_path), **over)
+                      grok_decider_mode=mode, directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False, data_dir=str(tmp_path), **over)
     eng = PulseEngine(cfg, market_feed=_Mkt(win), price_feed=feed)
     eng.grok_decider = _FakeDecider(mode, decision, follow_ok=follow_ok,
                                     policy_mode=policy_mode)               # inject (no network)
@@ -342,17 +342,15 @@ def test_engine_bundle_is_fully_structured(tmp_path):
     _drive(eng, t0)
     b = getattr(eng.grok_decider, "last_bundle", None)
     assert b is not None
-    for k in ("schema_version", "objective", "decision_id", "timing", "price", "digital_fair_p_up",
-              "polymarket", "payoff", "account_state", "bot_learned_evidence",
-              "decider_track_record"):
+    # bundle schema grok_decision_bundle/1.4 (compact "light" tier)
+    for k in ("schema_version", "grok_compute_tier", "grok_task", "decision_id", "series_label",
+              "timing", "price", "digital_fair_p_up", "polymarket", "cex_lead_mispricing",
+              "tradingview_trend"):
         assert k in b, k
-    assert "breakeven_win_rate" in (b["payoff"]["up"] or {})        # binary payoff bar present
     assert "fair_minus_poly" in b["polymarket"]                     # fair-vs-market divergence present
-    assert "win_rate" in b["account_state"]
-    # recent resolved 5-min windows + momentum summary are present for Grok to reason over
-    rw = b["recent_windows"]
-    assert "windows" in rw and "up_rate" in rw and "current_streak" in rw
-    assert isinstance(rw["windows"], list)
+    assert "horizon" in (b["grok_task"] or {})                      # task framing present
+    assert "confirm_mtf" in (b["tradingview_trend"] or {})          # MTF trend summary present
+    assert "btc_now" in b["price"]                                  # price context present
 
 
 def test_recent_windows_view_summary():

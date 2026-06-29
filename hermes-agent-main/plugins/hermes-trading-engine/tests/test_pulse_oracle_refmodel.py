@@ -46,7 +46,7 @@ def test_reject_classic_chainlink_feed_as_primary_settlement(tmp_path):
             validate_oracle_feed_type(bad)
     # the engine itself refuses to construct with a classic feed type
     with pytest.raises(ValueError):
-        PulseEngine(PulseConfig(oracle_feed_type="aggregator_v3", data_dir=str(tmp_path)),
+        PulseEngine(PulseConfig(oracle_feed_type="aggregator_v3", directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False, data_dir=str(tmp_path)),
                     market_feed=_FakeMarket(), price_feed=_oracle_feed())
 
 
@@ -56,7 +56,7 @@ def test_open_close_snapshot_source_is_rtds_chainlink(tmp_path):
     feed.poll(now=1000.0)
     snap = feed.snapshot_open("w", open_ts=1000.0, now=1002.0)
     assert snap.source == "rtds_chainlink"
-    eng = PulseEngine(PulseConfig(data_dir=str(tmp_path)), market_feed=_FakeMarket(),
+    eng = PulseEngine(PulseConfig(directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False, data_dir=str(tmp_path)), market_feed=_FakeMarket(),
                       price_feed=feed)
     o = eng.status()["oracle"]
     assert o["oracle_feed_type"] == "chainlink_data_streams_refprice"
@@ -76,7 +76,7 @@ def test_lead_feeds_are_features_only(tmp_path):
     assert feats["feeds"]["coinbase_btcusd"]["price"] == 64010.0
     # every lead feed is explicitly NOT settlement-eligible
     assert all(f["settlement_eligible"] is False for f in feats["feeds"].values())
-    eng = PulseEngine(PulseConfig(data_dir=str(tmp_path)), market_feed=_FakeMarket(),
+    eng = PulseEngine(PulseConfig(directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False, data_dir=str(tmp_path)), market_feed=_FakeMarket(),
                       price_feed=_oracle_feed())
     o = eng.status()["oracle"]
     assert "binance_btcusdt" in o["fast_feed_symbols"] and "coinbase_btcusd" in o["fast_feed_symbols"]
@@ -150,7 +150,7 @@ def test_full_cycle_settles_via_polymarket_and_reconciles(tmp_path):
     eng = PulseEngine(PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02,
                                   basis_buffer=0.0, min_seconds_since_open=0.0,
                                   sigma_trust_floor=0.0, min_vol_samples=2, settle_grace_s=0.0,
-                                  proxy_max_close_lag_s=30.0, data_dir=str(tmp_path)),
+                                  proxy_max_close_lag_s=30.0, directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False, data_dir=str(tmp_path)),
                       market_feed=_M(), price_feed=feed)
     for i in range(12):
         eng.tick(now=t0 - 12 + i)

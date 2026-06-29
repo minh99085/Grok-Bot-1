@@ -9,7 +9,10 @@ import json
 from engine.pulse.tradingview import TradingViewIntake, TradingViewEdge
 
 
-def _intake(tmp_path, *, mtf_timeframes=None):
+def _intake(tmp_path, *, mtf_timeframes=("5", "10", "15")):
+    # These tests assert the legacy 5/10/15 chart timeframes. Bot-1's live default is 2/3/4
+    # (PULSE_TV_MTF_TIMEFRAMES), so the test fixture pins the timeframes it exercises rather than
+    # relying on the production default.
     return TradingViewIntake(secret="s3cr3t", bot_name="hermes",
                              allowed_symbols=("BTCUSD",), data_dir=str(tmp_path),
                              mtf_timeframes=mtf_timeframes)
@@ -117,7 +120,7 @@ def test_index_mtf_via_feature_symbol(tmp_path):
     """Operator feeds INDEX:BTCUSD on 5m+10m charts — MTF resolves under BTCUSD."""
     ik = TradingViewIntake(secret="s3cr3t", bot_name="hermes",
                            allowed_symbols=("BTCUSD", "INDEX:BTCUSD"), data_dir=str(tmp_path),
-                           feature_symbol="BTCUSD")
+                           feature_symbol="BTCUSD", mtf_timeframes=("5", "10", "15"))
     t = 4_000_000.0
     for tf, ts in (("5", t), ("10", t + 10)):
         payload = {"secret": "s3cr3t", "bot_name": "hermes", "symbol": "INDEX:BTCUSD",
@@ -131,10 +134,12 @@ def test_index_mtf_via_feature_symbol(tmp_path):
 
 
 def test_confirmation_survives_restart(tmp_path):
-    ik = _intake(tmp_path)
+    # Use current (non-legacy) timeframes: _canonicalize_storage deliberately purges the legacy
+    # 5/10/15 TFs on reload (the bot migrated to 2/3/4), so a restart test must use live TFs.
+    ik = _intake(tmp_path, mtf_timeframes=("2", "3", "4"))
     t = 3_000_000.0
-    _send(ik, direction="UP", tf="5", now=t)
-    _send(ik, direction="UP", tf="10", now=t + 5)
-    ik2 = _intake(tmp_path)
+    _send(ik, direction="UP", tf="2", now=t)
+    _send(ik, direction="UP", tf="3", now=t + 5)
+    ik2 = _intake(tmp_path, mtf_timeframes=("2", "3", "4"))
     c = ik2.mtf_confirmation(symbol="BTCUSD", now=t + 6)
     assert c["confirm"] == "confirmed_up" and c["direction"] == "UP"

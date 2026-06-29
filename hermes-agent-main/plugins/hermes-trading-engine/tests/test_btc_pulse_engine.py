@@ -261,6 +261,9 @@ def test_engine_full_cycle_trade_and_settle(tmp_path):
                                   min_vol_samples=2,
                       tv_mtf_conflict_gate_enabled=False,
                                   tv_down_bias_gate_enabled=False,
+                                  directional_down_only=False,
+                                  directional_block_up_until_promoted=False,
+                                  directional_up_restrictions_enabled=False,
                                   data_dir=str(tmp_path)),
                       market_feed=_FakeMarket(win, resolution=True), price_feed=feed)
     eng.tradingview = _StubTradingView()
