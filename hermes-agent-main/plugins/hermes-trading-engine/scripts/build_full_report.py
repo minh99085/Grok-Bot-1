@@ -38,7 +38,10 @@ def main() -> int:
     ledger = _load(data_dir / "btc_pulse_ledger.json")
     md = build_full_report_md(light, status, ledger)
     out_md.write_text(md, encoding="utf-8")
+    full_copy = data_dir / "FULL_REPORT.md"
+    full_copy.write_text(md, encoding="utf-8")
     print("wrote %s (%d bytes)" % (out_md, len(md)))
+    print("wrote %s (%d bytes)" % (full_copy, len(md)))
     try:
         from engine.pulse.word_report import build_word_report
         out_docx = data_dir / "report.docx"

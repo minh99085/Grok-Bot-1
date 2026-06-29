@@ -61,17 +61,35 @@ try {
     Write-Host "  ok btc_pulse_ledger.json"
 }
 
-$volumeFiles = @(
+$volumeRequired = @(
     "btc_pulse_light_report.json",
     "btc_pulse_tradingview.json",
     "report.md",
     "report.docx",
     "btc_pulse_score_history.json"
 )
-foreach ($f in $volumeFiles) {
+$volumeOptional = @(
+    "FULL_REPORT.md",
+    "btc_pulse_meta_bundle.json",
+    "LESSONS.md",
+    "STATE.md",
+    "MANIFEST.txt",
+    "validation_full.txt",
+    "validation_light.txt"
+)
+foreach ($f in $volumeRequired) {
     $isBinary = $f -eq "report.docx"
     Copy-RemoteFile "$remoteDir/$f" (Join-Path $Dest $f) -Binary:$isBinary
     Write-Host "  ok $f"
+}
+foreach ($f in $volumeOptional) {
+    $isBinary = $f -eq "report.docx"
+    try {
+        Copy-RemoteFile "$remoteDir/$f" (Join-Path $Dest $f) -Binary:$isBinary
+        Write-Host "  ok $f"
+    } catch {
+        Write-Warning "  skip $f (not on VPS yet)"
+    }
 }
 
 if (-not (Test-Path (Join-Path $Dest "btc_pulse_status.json"))) {

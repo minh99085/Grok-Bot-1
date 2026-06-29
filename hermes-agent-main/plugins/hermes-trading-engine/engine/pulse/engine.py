@@ -4014,6 +4014,18 @@ class PulseEngine:
                 "min_seconds_to_close": self.cfg.min_seconds_to_close,
                 "max_book_age_s": self.cfg.exec_max_book_age_s}
 
+    def _ledger_for_report(self) -> dict:
+        """Directional ledger plus dep-arb positions for full-report / dashboard aggregation."""
+        return {
+            **self.ledger.to_dict(),
+            "accounting_state": {
+                "dep_arb_ledger": (self.dep_arb_ledger.to_state()
+                                   if self.dep_arb_ledger is not None else {}),
+                "arb_ledger": (self.arb_ledger.to_state()
+                               if self.arb_ledger is not None else {}),
+            },
+        }
+
     def light_report(self) -> dict:
         """The latest light report (report-only): full lifecycle reconciliation, exec stats,
         reject reasons, EV before/after costs, PnL grouped by every bucket dimension, calibration,
@@ -4121,7 +4133,7 @@ class PulseEngine:
         report["simplex_diagnostics"] = self._last_simplex
         from engine.pulse.reporting import build_report_sections
         report["sections"] = build_report_sections(
-            report, status={"ticks": self.ticks}, ledger=self.ledger.to_dict())
+            report, status={"ticks": self.ticks}, ledger=self._ledger_for_report())
         from engine.pulse.performance_scoring import compute_report_scores
         report["scores"] = compute_report_scores(
             report["sections"], global_reconciled=bool(report.get("global_reconciled")))
@@ -5049,7 +5061,7 @@ class PulseEngine:
                 from engine.pulse.reporting import build_full_report_md
                 from engine.pulse.word_report import build_word_report
                 st = self.status()
-                led = self.ledger.to_dict()
+                led = self._ledger_for_report()
                 full_md = build_full_report_md(lr, st, led)
                 (self._data_dir / "report.md").write_text(full_md, encoding="utf-8")
                 (self._data_dir / "FULL_REPORT.md").write_text(full_md, encoding="utf-8")

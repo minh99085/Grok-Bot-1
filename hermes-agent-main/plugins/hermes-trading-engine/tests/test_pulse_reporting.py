@@ -103,3 +103,47 @@ def test_light_report_reconciles_with_ledger(tmp_path):
     assert "scores" in rep and "overall" in (rep.get("scores") or {})
     md = build_full_report_md(rep, eng.status(), eng.ledger.to_dict())
     assert "1. Trading Performance" in md and "2. Operation" in md and "3. External Signals" in md
+
+
+def test_full_report_includes_dep_arb_section():
+    from engine.pulse.reporting import dep_arb_summary_from_ledger, build_full_report_md
+    light = {
+        "capital": {"dependency_arb_realized_pnl_usd": 52.18, "total_on_hand_usd": 552.18},
+        "dependency_arbitrage": {
+            "realized_profit_usd": 52.18,
+            "executed": 67,
+            "settled": 65,
+            "open": 2,
+            "kelly_active": False,
+            "booking": {"theoretical_settled_usd": 80.0, "realized_settled_usd": 52.18,
+                        "capture_ratio": 0.65, "settled_n": 65},
+            "dependency_arb_calibration": {
+                "buckets": {"0-0.10": {"n": 14, "win_rate": 0.57, "profit_factor": 1.12,
+                                       "avg_pnl": 2.1, "last_won": True}},
+            },
+            "kelly_gate": {"kelly_enabled": False, "walk_forward_passed": False},
+        },
+        "global_reconciled": True,
+    }
+    ledger = {
+        "accounting_state": {
+            "dep_arb_ledger": {
+                "positions": {
+                    "w1": {"parent_window_key": "w1", "status": "settled", "entry_ts": 1000.0,
+                           "close_ts": 1900.0, "entry_vwap": 0.08, "cost_usd": 5.0,
+                           "realized_profit_usd": 3.0, "won": True, "outcome_settled": True},
+                    "w2": {"parent_window_key": "w2", "status": "settled", "entry_ts": 900.0,
+                           "close_ts": 1800.0, "entry_vwap": 0.45, "cost_usd": 50.0,
+                           "realized_profit_usd": -50.0, "won": False, "outcome_settled": True},
+                }
+            }
+        }
+    }
+    summary = dep_arb_summary_from_ledger(ledger)
+    assert summary["stats"]["wins"] == 1
+    assert summary["stats"]["losses"] == 1
+    md = build_full_report_md(light, {"ticks": 100}, ledger)
+    assert "Dependency arbitrage — P-UP" in md
+    assert "Last 20 dep-arb trades" in md
+    assert "Entry-price calibration" in md
+    assert "Dep-arb PnL (P-UP)" in md

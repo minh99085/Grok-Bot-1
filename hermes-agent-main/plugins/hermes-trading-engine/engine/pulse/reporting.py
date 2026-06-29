@@ -189,6 +189,114 @@ def _pnl_buckets(light: dict) -> dict:
     return {k: light[k] for k in (light or {}) if k.startswith("pnl_by_")}
 
 
+def dep_arb_summary_from_ledger(ledger: Optional[dict] = None) -> dict:
+    """Outcome-settled dep-arb stats + last 20 P-UP trades for full reports."""
+    from engine.pulse.dashboard_trades import dep_arb_stats, dep_arb_trades_for_dashboard
+    led = ledger or {}
+    return {
+        "stats": dep_arb_stats(led),
+        "recent_trades": dep_arb_trades_for_dashboard(led, limit=20),
+    }
+
+
+def _append_dep_arb_report_section(
+    out: list,
+    *,
+    dep: dict,
+    dep_summary: dict,
+    light: dict,
+    table,
+    h3,
+    kv,
+) -> None:
+    """Render the complete dependency-arb (P-UP) lane for FULL_REPORT.md."""
+    h3("Dependency arbitrage — P-UP (nested parent-UP buys)")
+    stats = (dep_summary or {}).get("stats") or {}
+    cap = (light.get("capital") or {})
+    table([
+        ["Realized P&L (outcome-settled)", "$%s" % dep.get("realized_profit_usd")],
+        ["Capital dep-arb slice", "$%s" % cap.get("dependency_arb_realized_pnl_usd")],
+        ["Total positions", stats.get("total")],
+        ["Settled", stats.get("settled")],
+        ["Wins", stats.get("wins")],
+        ["Losses", stats.get("losses")],
+        ["Open", stats.get("open")],
+        ["Executed", dep.get("executed")],
+        ["Scans", dep.get("scans")],
+        ["Kelly active", dep.get("kelly_active")],
+    ], ["metric", "value"])
+
+    book = dep.get("booking") or {}
+    if book:
+        h3("Booking: outcome-settled vs heuristic")
+        table([
+            ["Theoretical settled", "$%s" % book.get("theoretical_settled_usd")],
+            ["Realized settled", "$%s" % book.get("realized_settled_usd")],
+            ["Capture ratio", book.get("capture_ratio")],
+            ["Settled n", book.get("settled_n")],
+        ], ["metric", "value"])
+
+    cal = dep.get("dependency_arb_calibration") or {}
+    buckets = cal.get("buckets") or {}
+    if buckets:
+        h3("Entry-price calibration (Kelly p_win source)")
+        table([
+            [label,
+             b.get("n"),
+             b.get("win_rate"),
+             b.get("profit_factor"),
+             b.get("avg_pnl"),
+             b.get("last_won")]
+            for label, b in sorted(buckets.items())
+        ], ["bucket", "n", "win_rate", "PF", "avg_pnl", "last_won"])
+    else:
+        out.append("_no calibration buckets yet (need outcome-settled samples)_")
+
+    gate = dep.get("kelly_gate") or {}
+    if gate:
+        h3("Kelly sizing gate")
+        kv(gate, ["kelly_enabled", "kelly_active", "walk_forward_passed", "warm_buckets",
+                  "kelly_fraction", "kelly_depth_frac"])
+        wf = gate.get("walk_forward") or light.get("walk_forward", {}).get("dependency_arb") or {}
+        if wf:
+            kv(wf, ["passed", "train_n", "min_holdout_n", "min_holdout_pf"])
+            holdout = wf.get("holdout") or {}
+            if holdout:
+                kv(holdout, ["n", "win_rate", "pnl_usd", "profit_factor"])
+
+    h3("Scanner activity")
+    kv(dep, ["mode", "enabled", "violations_detected", "actionable_detected",
+             "mid_only_violations", "rejected_invalid", "rejected_by_reason"])
+
+    graph = light.get("arb_graph") or {}
+    if graph:
+        h3("LCMM arb graph")
+        kv(graph, ["nodes", "edges", "nested_pairs"])
+
+    breg = light.get("bregman_projection") or {}
+    if breg.get("enabled"):
+        h3("Bregman projection (Layer 2)")
+        kv(breg, ["enabled", "trade_authority", "note"])
+
+    trades = (dep_summary or {}).get("recent_trades") or []
+    h3("Last 20 dep-arb trades (P-UP)")
+    if trades:
+        table([
+            [
+                (t.get("research") or {}).get("market_series", "—"),
+                t.get("status"),
+                "✓" if t.get("won") is True else ("✗" if t.get("won") is False else "—"),
+                t.get("entry_price"),
+                t.get("cost_usd"),
+                t.get("pnl_usd"),
+                "yes" if t.get("outcome_settled") else "heuristic",
+            ]
+            for t in trades
+        ], ["parent", "status", "won", "entry_vwap", "cost", "pnl", "settlement"])
+    else:
+        out.append("_no dep-arb trades yet_")
+
+
 def build_report_sections(light: dict, *, status: Optional[dict] = None,
                           ledger: Optional[dict] = None) -> dict:
     """Organize the light report into three operator-facing sections."""
@@ -202,6 +310,8 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
     tv = light.get("tradingview", {}) or {}
     gd = light.get("grok_decider", {}) or {}
 
+    dep = light.get("dependency_arbitrage") or {}
+    dep_summary = dep_arb_summary_from_ledger(ledger)
     dir_pnl = None
     if cap.get("total_realized_pnl_usd") is not None and cap.get("arb_realized_pnl_usd") is not None:
         dir_pnl = round(float(cap["total_realized_pnl_usd"]) - float(cap["arb_realized_pnl_usd"]), 4)
@@ -216,6 +326,9 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
             "total_return_pct": cap.get("total_return_pct"),
             "directional_realized_pnl_usd": cap.get("realized_pnl_usd") or dir_pnl,
             "arb_realized_pnl_usd": cap.get("arb_realized_pnl_usd") or arb.get("realized_profit_usd"),
+            "dependency_arb_realized_pnl_usd": (
+                cap.get("dependency_arb_realized_pnl_usd")
+                or dep.get("realized_profit_usd")),
             "total_realized_pnl_usd": cap.get("total_realized_pnl_usd"),
             "win_rate": led.get("win_rate"),
             "win_rate_up": led.get("win_rate_up"),
@@ -228,6 +341,8 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
         "capital": cap,
         "ledger": led,
         "arbitrage": arb,
+        "dependency_arbitrage": dep,
+        "dep_arb_summary": dep_summary,
         "reconciliation": light.get("reconciliation"),
         "execution_stats": light.get("execution_stats"),
         "reject_reasons": light.get("reject_reasons"),
@@ -357,8 +472,12 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
     ev = tp.get("ev_before_after_costs", {}) or {}
     imp = ex.get("impact_summary", {}) or {}
 
-    out.append("# BTC Pulse — 5m + 15m Performance Report\n")
-    out.append("_PAPER ONLY · `global_reconciled=%s` · ticks %s_\n"
+    dep = light.get("dependency_arbitrage") or tp.get("dependency_arbitrage") or {}
+    dep_summary = tp.get("dep_arb_summary") or dep_arb_summary_from_ledger(ledger)
+
+    out.append("# BTC Pulse — Full Performance Report\n")
+    out.append("_PAPER ONLY · `global_reconciled=%s` · ticks %s · "
+               "primary lane: dependency-arb (P-UP)_\n"
                % (eng.get("global_reconciled"), eng.get("ticks")))
 
     h("Performance Scorecard")
@@ -383,14 +502,26 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
                for e in entries],
               ["utc", "settled", "trading", "operation", "signals", "overall"])
 
+    _append_dep_arb_report_section(
+        out, dep=dep, dep_summary=dep_summary, light=light,
+        table=table, h3=h3, kv=kv)
+
     h("1. Trading Performance")
+    dep_stats = (dep_summary or {}).get("stats") or {}
+    dep_wr = None
+    if dep_stats.get("settled"):
+        dep_wr = round(dep_stats["wins"] / dep_stats["settled"], 4)
     table([
         ["Total on-hand", "$%s" % (hl.get("total_on_hand_usd") or cap.get("total_on_hand_usd"))],
         ["Directional on-hand", "$%s" % cap.get("on_hand_capital_usd")],
         ["Starting capital", "$%s" % hl.get("starting_capital_usd")],
         ["Total return", "%s%%" % (hl.get("total_return_pct") or hl.get("return_pct"))],
+        ["Dep-arb PnL (P-UP)", "$%s" % hl.get("dependency_arb_realized_pnl_usd")],
+        ["Dep-arb W/L", "%s / %s (of %s settled)" % (
+            dep_stats.get("wins"), dep_stats.get("losses"), dep_stats.get("settled"))],
+        ["Dep-arb win rate", dep_wr],
         ["Directional PnL", "$%s" % hl.get("directional_realized_pnl_usd")],
-        ["Arb PnL (segregated)", "$%s" % hl.get("arb_realized_pnl_usd")],
+        ["Dutch-book arb PnL", "$%s" % hl.get("arb_realized_pnl_usd")],
         ["Total PnL", "$%s" % hl.get("total_realized_pnl_usd")],
         ["Trades / settled", "%s / %s" % (hl.get("trades"), hl.get("settled"))],
         ["Win rate", hl.get("win_rate")],
@@ -420,20 +551,12 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
     else:
         out.append("_no arb activity_")
 
-    dep = light.get("dependency_arbitrage") or {}
     profit = light.get("profit_discovery") or light.get("five_x_improvement") or {}
-    if dep or profit:
+    if profit:
         h3("Profit discovery (5x target)")
-        if profit:
-            kv(profit, ["five_x_improvement_status", "improvement_ratio", "baseline_total_pnl_usd",
-                        "current_total_pnl_usd", "arb_pnl_usd", "directional_pnl_usd",
-                        "dependency_arb_pnl_usd", "primary_edge_source", "top_blockers"])
-        if dep:
-            kv(dep, ["mode", "enabled", "violations_detected", "actionable_detected",
-                     "rejected_by_reason", "executed", "realized_profit_usd"])
-        graph = light.get("arb_graph") or {}
-        if graph:
-            kv(graph, ["nodes", "edges", "nested_pairs", "dependency_proposals"])
+        kv(profit, ["five_x_improvement_status", "improvement_ratio", "baseline_total_pnl_usd",
+                    "current_total_pnl_usd", "arb_pnl_usd", "directional_pnl_usd",
+                    "dependency_arb_pnl_usd", "primary_edge_source", "top_blockers"])
 
     h3("Accounting integrity")
     rec = tp.get("reconciliation", {}) or {}

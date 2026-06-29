@@ -141,9 +141,48 @@ def build_word_report(
         mt.rows[i].cells[0].text = k
         mt.rows[i].cells[1].text = v
 
+    dep = tp.get("dependency_arbitrage") or light.get("dependency_arbitrage") or {}
+    dep_summary = tp.get("dep_arb_summary") or {}
+    dep_stats = dep_summary.get("stats") or {}
+    if dep:
+        doc.add_heading("Dependency arbitrage (P-UP)", level=2)
+        doc.add_paragraph(
+            f"Realized ${dep.get('realized_profit_usd', 0)} · "
+            f"Executed {dep.get('executed', 0)} · Settled {dep.get('settled', 0)} · "
+            f"Wins {dep_stats.get('wins', 0)} · Losses {dep_stats.get('losses', 0)} · "
+            f"Kelly active {dep.get('kelly_active', False)}")
+        cal = (dep.get("dependency_arb_calibration") or {}).get("buckets") or {}
+        if cal:
+            doc.add_heading("Calibration buckets", level=3)
+            ct = doc.add_table(rows=1 + len(cal), cols=5)
+            ct.style = "Table Grid"
+            for i, h in enumerate(["Bucket", "n", "Win rate", "PF", "Avg PnL"]):
+                ct.rows[0].cells[i].text = h
+            for ri, (label, b) in enumerate(sorted(cal.items()), start=1):
+                ct.rows[ri].cells[0].text = str(label)
+                ct.rows[ri].cells[1].text = str(b.get("n") or "")
+                ct.rows[ri].cells[2].text = _fmt(b.get("win_rate"), 4)
+                ct.rows[ri].cells[3].text = _fmt(b.get("profit_factor"), 4)
+                ct.rows[ri].cells[4].text = f"${_fmt(b.get('avg_pnl'))}"
+        trades = dep_summary.get("recent_trades") or []
+        if trades:
+            doc.add_heading("Last 20 dep-arb trades", level=3)
+            dt = doc.add_table(rows=1 + min(len(trades), 20), cols=6)
+            dt.style = "Table Grid"
+            for i, h in enumerate(["Parent", "Status", "Won", "Entry", "PnL", "Settled"]):
+                dt.rows[0].cells[i].text = h
+            for ri, t in enumerate(trades[:20], start=1):
+                dt.rows[ri].cells[0].text = str((t.get("research") or {}).get("market_series") or "")
+                dt.rows[ri].cells[1].text = str(t.get("status") or "")
+                won = t.get("won")
+                dt.rows[ri].cells[2].text = "Yes" if won else ("No" if won is False else "—")
+                dt.rows[ri].cells[3].text = _fmt(t.get("entry_price"), 3)
+                dt.rows[ri].cells[4].text = f"${_fmt(t.get('pnl_usd'))}"
+                dt.rows[ri].cells[5].text = "outcome" if t.get("outcome_settled") else "heuristic"
+
     arb = tp.get("arbitrage", {}) or {}
     if arb:
-        doc.add_heading("Arbitrage", level=2)
+        doc.add_heading("Dutch-book arbitrage", level=2)
         doc.add_paragraph(
             f"Executed {arb.get('executed', 0)} · Settled {arb.get('settled', 0)} · "
             f"Profit ${arb.get('realized_profit_usd', 0)}")
