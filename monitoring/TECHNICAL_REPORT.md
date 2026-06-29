@@ -1,22 +1,22 @@
 # BTC Pulse — Technical Report (plain English)
 
-_Updated: 2026-06-29 11:43:52 UTC_
+_Updated: 2026-06-29 20:25:29 UTC_
 
 ## At a glance
 
 | | |
 |---|---|
-| **Overall grade** | **C** (70.2/100) — Below target — review config and performance. |
-| Trading performance | C (70.0/100) |
-| Engine operation | C (71.5/100) |
-| External signals | F (49.4/100) |
-| Technical runtime | B (82.0/100) |
-| Settled trades | 0 |
-| Engine ticks | 5 |
+| **Overall grade** | **D** (60.0/100) — Weak — meaningful issues; do not promote to live. |
+| Trading performance | F (39.8/100) |
+| Engine operation | C+ (75.4/100) |
+| External signals | F (45.6/100) |
+| Technical runtime | B (83.1/100) |
+| Settled trades | 2 |
+| Engine ticks | 7 |
 
 ## Executive summary
 
-The bot is **running safely with solid technical runtime**, but **trading results and/or external signals are holding the composite grade down**.
+The bot needs attention: **trading performance or signal quality is weak**, even if some infrastructure checks pass.
 
 ## How the bot is doing (money & trades)
 
@@ -24,37 +24,38 @@ The bot is **running safely with solid technical runtime**, but **trading result
 |---|---|
 | Mode | Paper only |
 | Starting capital | $500.00 |
-| Total on hand | $552.18 (10.4% return) |
-| Directional PnL | $0.00 |
+| Total on hand | $807.56 (61.5% return) |
+| Directional PnL | $-10.00 |
 | Arb PnL | $0.00 |
-| Win rate | — (0 settled) |
-| UP / DOWN win rate | — / — |
-| Profit factor | None |
+| Win rate | 0.0% (2 settled) |
+| UP / DOWN win rate | — / 0.0% |
+| Profit factor | 0.0 |
 | Bot halted? | No — running |
 
 ## Infrastructure & data health
 
-- **Oracle (RTDS):** Connected; fresh (age 1.06s).
-- **TradingView:** 978 valid alerts of 1197 received; observe-only=yes; MTF verdict: `confirmed_down_mtf`.
+- **Oracle (RTDS):** Connected; fresh (age 0.92s).
+- **TradingView:** 1535 valid alerts of 1754 received; observe-only=yes; MTF verdict: `partial_up_mtf`.
 - **Entry config:** tick 15.0s, max price 0.55, min edge 0.008, min R:R 0.5, 15m TTC band [450.0, 720.0]s, green path=on.
 
 ## What's dragging the score
 
-- **Trading performance** (C): weakest — Trade sample size (0), Win rate (50), Profit factor (50).
-- **Operation** (C): weakest — Grok/decider errors (0), Promotion readiness (40), Candidate pipeline activity (70).
-- **External signals** (F): weakest — TV-aligned win edge (30), Grok direction accuracy (32), CEX lead proven (40).
-- **Technical runtime**: watch — Gate funnel balance (54), Design manifest match (70).
+- **Trading performance** (F): weakest — Win rate (0), Profit factor (0), Trade sample size (7).
+- **Operation** (C+): weakest — Grok/decider errors (26), Promotion readiness (40), Candidate pipeline activity (70).
+- **External signals** (F): weakest — Grok direction accuracy (8), TV-aligned win edge (30), CEX lead proven (40).
+- **Technical runtime**: watch — Gate funnel balance (62), Design manifest match (70).
 
 ## Where candidates get blocked (top gates)
 
-- `directional`: 537
-- `baseline_cohort_gate`: 45
-- `execution_gate`: 2
+- `directional`: 1,039
+- `baseline_cohort_gate`: 96
+- `execution_gate`: 12
 
 ## Why recent windows didn't trade
 
-- `directional_disabled`: 8 recent eval(s)
-- `no_price_or_vol`: 2 recent eval(s)
+- `directional_series_not_allowed`: 6 recent eval(s)
+- `edge_below_min`: 4 recent eval(s)
+- `no_tradeable_ask`: 2 recent eval(s)
 
 ## Design vs deployed (drift)
 
@@ -68,18 +69,20 @@ The bot is **running safely with solid technical runtime**, but **trading result
 - Oracle and RTDS feeds are healthy and fresh.
 - TradingView webhooks are flowing; observe-only lock is respected.
 - Ledger and lifecycle accounting reconcile cleanly.
-- Paper portfolio is up 10.4% overall (arb helping).
+- Paper portfolio is up 61.5% overall (arb helping).
 
 **Watch:**
+- Directional trading is underperforming — win rate and profit factor drag the grade.
 - External signals (TV hit rate, Grok accuracy) are not yet predictive of outcomes.
 - Live config differs from design manifest — see drift section below.
 
 **Suggested actions:**
+- Directional PnL is negative; arb is carrying total return.
 - Sync VPS env with `scripts/apply-loop-arch-env.py` and redeploy if drift is unintentional.
 
 ## Score trend (VPS history)
 
-Report overall moved **flat** (65.2 → 65.2) over the last 5 recorded snapshots. Trading: 70.0 → 70.0; Operation: 71.5 → 71.5.
+Report overall moved **up** (36.8 → 50.2) over the last 5 recorded snapshots. Trading: 21.2 → 39.8; Operation: 59.1 → 75.7.
 
 ---
 
