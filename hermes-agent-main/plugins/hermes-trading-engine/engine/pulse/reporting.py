@@ -202,9 +202,14 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
     tv = light.get("tradingview", {}) or {}
     gd = light.get("grok_decider", {}) or {}
 
+    # TRUE directional P&L = total − within-window arb − dependency-arb. (Previously dep-arb was
+    # NOT subtracted, so the whole dependency-arb profit was mislabeled as "Directional PnL" even
+    # when directional made zero trades.)
+    dep_arb_pnl = cap.get("dependency_arb_realized_pnl_usd")
     dir_pnl = None
     if cap.get("total_realized_pnl_usd") is not None and cap.get("arb_realized_pnl_usd") is not None:
-        dir_pnl = round(float(cap["total_realized_pnl_usd"]) - float(cap["arb_realized_pnl_usd"]), 4)
+        dir_pnl = round(float(cap["total_realized_pnl_usd"]) - float(cap["arb_realized_pnl_usd"])
+                        - float(dep_arb_pnl or 0.0), 4)
 
     by_series = light.get("by_market_series") or {}
     trading_performance = {
@@ -214,7 +219,9 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
             "starting_capital_usd": cap.get("starting_capital_usd"),
             "return_pct": cap.get("return_pct"),
             "total_return_pct": cap.get("total_return_pct"),
-            "directional_realized_pnl_usd": cap.get("realized_pnl_usd") or dir_pnl,
+            "directional_realized_pnl_usd": (cap.get("realized_pnl_usd")
+                                             if cap.get("realized_pnl_usd") is not None else dir_pnl),
+            "dependency_arb_realized_pnl_usd": dep_arb_pnl,
             "arb_realized_pnl_usd": cap.get("arb_realized_pnl_usd") or arb.get("realized_profit_usd"),
             "total_realized_pnl_usd": cap.get("total_realized_pnl_usd"),
             "win_rate": led.get("win_rate"),
@@ -390,6 +397,7 @@ def build_full_report_md(light: dict, status: Optional[dict] = None,
         ["Starting capital", "$%s" % hl.get("starting_capital_usd")],
         ["Total return", "%s%%" % (hl.get("total_return_pct") or hl.get("return_pct"))],
         ["Directional PnL", "$%s" % hl.get("directional_realized_pnl_usd")],
+        ["Dependency-arb PnL (segregated)", "$%s" % hl.get("dependency_arb_realized_pnl_usd")],
         ["Arb PnL (segregated)", "$%s" % hl.get("arb_realized_pnl_usd")],
         ["Total PnL", "$%s" % hl.get("total_realized_pnl_usd")],
         ["Trades / settled", "%s / %s" % (hl.get("trades"), hl.get("settled"))],

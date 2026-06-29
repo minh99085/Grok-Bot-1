@@ -123,12 +123,11 @@ def build_word_report(
         f"Section score: {sb.get('score', '—')} / 100  (Grade: {sb.get('grade', '—')})")
     _score_breakdown(sb)
     doc.add_heading("Key metrics", level=2)
-    mt = doc.add_table(rows=10, cols=2)
-    mt.style = "Table Grid"
     metrics = [
         ("Total on-hand", f"${_fmt(hl.get('total_on_hand_usd'))}"),
         ("Total return", f"{_fmt(hl.get('total_return_pct') or hl.get('return_pct'))}%"),
         ("Directional PnL", f"${_fmt(hl.get('directional_realized_pnl_usd'))}"),
+        ("Dependency-arb PnL", f"${_fmt(hl.get('dependency_arb_realized_pnl_usd'))}"),
         ("Arb PnL", f"${_fmt(hl.get('arb_realized_pnl_usd'))}"),
         ("Win rate", _fmt(hl.get("win_rate"), 4)),
         ("Win rate UP / DOWN", f"{_fmt(hl.get('win_rate_up'), 4)} / {_fmt(hl.get('win_rate_down'), 4)}"),
@@ -137,6 +136,8 @@ def build_word_report(
         ("Avg PnL/trade", f"${_fmt((tp.get('ledger') or {}).get('avg_pnl_per_trade'))}"),
         ("Global reconciled", str((tp.get("reconciliation") or {}).get("global_reconciled"))),
     ]
+    mt = doc.add_table(rows=len(metrics), cols=2)
+    mt.style = "Table Grid"
     for i, (k, v) in enumerate(metrics):
         mt.rows[i].cells[0].text = k
         mt.rows[i].cells[1].text = v

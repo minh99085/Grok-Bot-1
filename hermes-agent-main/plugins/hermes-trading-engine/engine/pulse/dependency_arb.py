@@ -35,6 +35,102 @@ def realized_dependency_profit_usd(trade: dict) -> float:
     return round(max(0.0, capped), 6)
 
 
+def outcome_settled_profit_usd(trade: dict, outcome_up: Optional[bool]) -> Optional[float]:
+    """TRUE paper P&L for a ``buy_parent_up`` position against the REAL parent-window outcome.
+
+    The position is long parent-UP shares bought for ``cost_usd``. At settlement parent-UP pays
+    $1/share iff the parent window resolved UP, else $0. Unlike ``realized_dependency_profit_usd``
+    (a convergence heuristic floored at 0), this CAN be negative — it books the loss when a cheap
+    tail settles to zero. Returns None when the outcome is not yet resolvable.
+    """
+    if outcome_up is None:
+        return None
+    shares = float(trade.get("shares") or 0)
+    cost = float(trade.get("cost_usd") or 0)
+    if shares <= 0:
+        return round(-cost, 6)
+    payoff = shares * 1.0 if bool(outcome_up) else 0.0
+    return round(payoff - cost, 6)
+
+
+class DependencyArbCalibration:
+    """Per entry-price bucket win/loss accumulator on OUTCOME-settled dep-arb trades.
+
+    This is the measured edge that gates Kelly sizing (WS3): a bucket is only trustworthy once it
+    has enough real settled samples. Buckets are by parent-UP entry price because that is where the
+    convexity (and the adverse-selection risk) lives.
+    """
+
+    BUCKETS = ((0.0, 0.10), (0.10, 0.20), (0.20, 0.35), (0.35, 0.50), (0.50, 1.01))
+
+    def __init__(self) -> None:
+        self.buckets: dict = {}
+
+    @classmethod
+    def bucket_key(cls, entry_price: Optional[float]) -> Optional[str]:
+        if entry_price is None:
+            return None
+        p = float(entry_price)
+        for lo, hi in cls.BUCKETS:
+            if lo <= p < hi:
+                return "%.2f-%.2f" % (lo, hi)
+        return ">=%.2f" % cls.BUCKETS[-1][1]
+
+    def observe(self, entry_price: Optional[float], won: bool, pnl: float) -> None:
+        key = self.bucket_key(entry_price)
+        if key is None:
+            return
+        b = self.buckets.setdefault(
+            key, {"n": 0, "wins": 0, "pnl": 0.0, "gross_win": 0.0, "gross_loss": 0.0})
+        b["n"] += 1
+        b["wins"] += int(bool(won))
+        b["pnl"] += float(pnl)
+        if pnl > 0:
+            b["gross_win"] += float(pnl)
+        elif pnl < 0:
+            b["gross_loss"] += -float(pnl)
+
+    def bucket_stats(self, entry_price: Optional[float]) -> Optional[dict]:
+        key = self.bucket_key(entry_price)
+        b = self.buckets.get(key) if key else None
+        if not b or b["n"] == 0:
+            return None
+        n = b["n"]
+        return {
+            "bucket": key, "n": n, "wins": b["wins"],
+            "win_rate": round(b["wins"] / n, 4),
+            "avg_pnl": round(b["pnl"] / n, 6),
+            "profit_factor": (round(b["gross_win"] / b["gross_loss"], 4)
+                              if b["gross_loss"] > 0 else None),
+        }
+
+    def to_dict(self) -> dict:
+        out = {}
+        for key, b in self.buckets.items():
+            n = b["n"] or 0
+            out[key] = {
+                "n": n, "wins": b["wins"],
+                "win_rate": (round(b["wins"] / n, 4) if n else None),
+                "avg_pnl": (round(b["pnl"] / n, 6) if n else None),
+                "profit_factor": (round(b["gross_win"] / b["gross_loss"], 4)
+                                  if b["gross_loss"] > 0 else None),
+            }
+        return out
+
+    def to_state(self) -> dict:
+        return {k: dict(v) for k, v in self.buckets.items()}
+
+    def load_state(self, data: dict) -> None:
+        self.buckets = {}
+        for k, v in (data or {}).items():
+            if isinstance(v, dict):
+                self.buckets[k] = {
+                    "n": int(v.get("n", 0) or 0), "wins": int(v.get("wins", 0) or 0),
+                    "pnl": float(v.get("pnl", 0.0) or 0.0),
+                    "gross_win": float(v.get("gross_win", 0.0) or 0.0),
+                    "gross_loss": float(v.get("gross_loss", 0.0) or 0.0)}
+
+
 @dataclass
 class DependencyViolation:
     """A detected LCMM constraint violation (may or may not be executable)."""
@@ -256,6 +352,11 @@ def try_execute_nested_implication(
         "violation_magnitude": violation.violation_magnitude,
         "reason": entry_mode,
         "bregman_projection_distance": (bregman_diag or {}).get("projection_distance"),
+        # outcome-settlement linkage (so the ledger can book the REAL parent-window result, not
+        # only the convergence heuristic). Filled best-effort from the parent window object.
+        "parent_market_id": str(getattr(parent, "market_id", "") or ""),
+        "parent_up_token": str(getattr(parent, "up_token_id", "") or ""),
+        "parent_open_ts": float(getattr(parent, "open_ts", 0.0) or 0.0),
     }
     trade["booked_profit_usd"] = realized_dependency_profit_usd(trade)
     return _ret(trade, "ok")
@@ -277,6 +378,14 @@ class DependencyArbLedger:
         self.rejected_invalid = 0
         self.rejected_by_reason: dict = {}
         self.mid_only_violations = 0
+        # --- F1: real-outcome settlement (books real wins AND losses) ---
+        self.calibration = DependencyArbCalibration()
+        self.outcome_settled = 0            # settled against the REAL parent-window outcome
+        self.heuristic_settled = 0          # settled via the legacy convergence heuristic
+        self.wins = 0
+        self.losses = 0
+        self.realized_outcome_profit_usd = 0.0   # sum of TRUE P&L (can be negative)
+        self.heuristic_profit_usd = 0.0          # sum of legacy heuristic P&L (>=0)
 
     def record_scan(self, violations: list) -> None:
         self.scans += 1
@@ -309,17 +418,56 @@ class DependencyArbLedger:
         self.executed += 1
         return True
 
-    def settle_due(self, now: float) -> int:
+    def settle_due(self, now: float, *, resolver=None) -> int:
+        """Settle positions whose parent window has closed.
+
+        ``resolver`` (engine-supplied) maps a position dict to ``(outcome_up | None, source)``
+        using the same authority as the directional ledger (Polymarket resolution first, RTDS
+        Chainlink open/close proxy fallback). When provided, P&L is the TRUE settlement result
+        (``outcome_settled_profit_usd`` — books real losses) and the entry-price bucket is
+        calibrated. When ``resolver`` is None the legacy convergence heuristic is used (floored at
+        0), preserving backward compatibility for callers/tests that don't resolve outcomes.
+        """
         n = 0
         for pk, p in list(self.positions.items()):
-            if p.get("status") == "open" and now >= float(p.get("close_ts") or 0):
+            if p.get("status") != "open" or now < float(p.get("close_ts") or 0):
+                continue
+            p.setdefault("theoretical_profit_usd", p.get("expected_profit_usd"))
+            heuristic = realized_dependency_profit_usd(p)
+            p["heuristic_profit_usd"] = heuristic
+            outcome_up, source = (None, None)
+            if resolver is not None:
+                try:
+                    outcome_up, source = resolver(p)
+                except Exception:  # noqa: BLE001 — a resolver error never wedges the loop
+                    outcome_up, source = (None, None)
+            if resolver is not None and outcome_up is None:
+                continue                      # not resolvable yet — retry next tick (stays open)
+            if outcome_up is not None:
+                profit = outcome_settled_profit_usd(p, outcome_up) or 0.0
+                won = bool(outcome_up)        # buy_parent_up wins iff parent settled UP
                 p["status"] = "settled"
-                profit = realized_dependency_profit_usd(p)
+                p["settle_mode"] = "outcome"
+                p["outcome_up"] = won
+                p["settle_source"] = source
                 p["realized_profit_usd"] = profit
-                p.setdefault("theoretical_profit_usd", p.get("expected_profit_usd"))
+                p["won"] = won
+                self.realized_outcome_profit_usd = round(
+                    self.realized_outcome_profit_usd + profit, 6)
                 self.realized_profit_usd = round(self.realized_profit_usd + profit, 6)
-                self.settled += 1
-                n += 1
+                self.outcome_settled += 1
+                self.wins += int(won)
+                self.losses += int(not won)
+                self.calibration.observe(p.get("entry_vwap"), won, profit)
+            else:
+                p["status"] = "settled"
+                p["settle_mode"] = "heuristic"
+                p["realized_profit_usd"] = heuristic
+                self.heuristic_profit_usd = round(self.heuristic_profit_usd + heuristic, 6)
+                self.realized_profit_usd = round(self.realized_profit_usd + heuristic, 6)
+                self.heuristic_settled += 1
+            self.settled += 1
+            n += 1
         return n
 
     def _normalize_position(self, p: dict) -> dict:
@@ -332,16 +480,41 @@ class DependencyArbLedger:
         pos.setdefault("capture_frac", 0.5)
         pos.setdefault("theoretical_profit_usd", pos.get("expected_profit_usd"))
         if pos.get("status") == "settled":
-            pos["realized_profit_usd"] = realized_dependency_profit_usd(pos)
+            if pos.get("settle_mode") == "outcome" and pos.get("outcome_up") is not None:
+                # outcome-settled: book the TRUE result (can be negative); keep heuristic alongside.
+                pos["heuristic_profit_usd"] = realized_dependency_profit_usd(pos)
+                pos["realized_profit_usd"] = outcome_settled_profit_usd(
+                    pos, pos.get("outcome_up"))
+            else:
+                pos["realized_profit_usd"] = realized_dependency_profit_usd(pos)
         return pos
 
     def _recompute_realized_totals(self) -> None:
-        total = sum(
-            float(p.get("realized_profit_usd") or 0)
-            for p in self.positions.values()
-            if p.get("status") == "settled"
-        )
+        """Rebuild realized/outcome/heuristic totals + win-loss + calibration from positions."""
+        total = 0.0
+        self.outcome_settled = self.heuristic_settled = 0
+        self.wins = self.losses = 0
+        self.realized_outcome_profit_usd = 0.0
+        self.heuristic_profit_usd = 0.0
+        self.calibration = DependencyArbCalibration()
+        for p in self.positions.values():
+            if p.get("status") != "settled":
+                continue
+            pnl = float(p.get("realized_profit_usd") or 0)
+            total += pnl
+            if p.get("settle_mode") == "outcome" and p.get("outcome_up") is not None:
+                won = bool(p.get("outcome_up"))
+                self.outcome_settled += 1
+                self.wins += int(won)
+                self.losses += int(not won)
+                self.realized_outcome_profit_usd += pnl
+                self.calibration.observe(p.get("entry_vwap"), won, pnl)
+            else:
+                self.heuristic_settled += 1
+                self.heuristic_profit_usd += float(p.get("heuristic_profit_usd") or pnl)
         self.realized_profit_usd = round(total, 6)
+        self.realized_outcome_profit_usd = round(self.realized_outcome_profit_usd, 6)
+        self.heuristic_profit_usd = round(self.heuristic_profit_usd, 6)
 
     def _booking_summary(self) -> dict:
         settled = [p for p in self.positions.values() if p.get("status") == "settled"]
@@ -354,6 +527,23 @@ class DependencyArbLedger:
             "realized_settled_usd": realized,
             "capture_ratio": ratio,
             "settled_n": len(settled),
+        }
+
+    def _outcome_summary(self) -> dict:
+        """True-P&L view (real wins AND losses) vs the legacy heuristic, for the same positions."""
+        n = self.outcome_settled
+        win_rate = round(self.wins / n, 4) if n else None
+        return {
+            "outcome_settled_n": n,
+            "heuristic_settled_n": self.heuristic_settled,
+            "wins": self.wins,
+            "losses": self.losses,
+            "win_rate": win_rate,
+            "realized_outcome_profit_usd": round(self.realized_outcome_profit_usd, 4),
+            "heuristic_profit_usd": round(self.heuristic_profit_usd, 4),
+            "calibration_by_entry_bucket": self.calibration.to_dict(),
+            "note": ("realized_outcome_profit_usd books the REAL parent-window result (real losses "
+                     "included); heuristic_profit_usd is the legacy convergence estimate (>=0)."),
         }
 
     def report(self) -> dict:
@@ -369,6 +559,7 @@ class DependencyArbLedger:
                 "open": sum(1 for p in self.positions.values() if p.get("status") == "open"),
                 "realized_profit_usd": round(self.realized_profit_usd, 4),
                 "booking": self._booking_summary(),
+                "outcome": self._outcome_summary(),
                 "last_violations": self.last_violations[-20:],
                 "segregated_from_directional": True,
                 "note": ("LCMM nested-window scanner + optional paper execution on validated "
@@ -382,6 +573,12 @@ class DependencyArbLedger:
                 "mid_only_violations": int(getattr(self, "mid_only_violations", 0) or 0),
                 "executed": self.executed, "settled": self.settled,
                 "realized_profit_usd": self.realized_profit_usd,
+                "outcome_settled": self.outcome_settled,
+                "heuristic_settled": self.heuristic_settled,
+                "wins": self.wins, "losses": self.losses,
+                "realized_outcome_profit_usd": self.realized_outcome_profit_usd,
+                "heuristic_profit_usd": self.heuristic_profit_usd,
+                "calibration": self.calibration.to_state(),
                 "last_violations": self.last_violations,
                 "positions": {k: dict(v) for k, v in self.positions.items()}}
 

@@ -1683,7 +1683,8 @@ class PulseEngine:
         if self.arb_ledger is not None:   # settle risk-free arb positions at window close (deterministic)
             self.arb_ledger.settle_due(now)
         if self.dep_arb_ledger is not None:
-            self.dep_arb_ledger.settle_due(now)
+            self.dep_arb_ledger.settle_due(
+                now, resolver=lambda p: self._dep_arb_resolver(p, now))
         ov = self.overlay.current(now) if self.overlay is not None else None
         ov_blackout = bool(ov and ov.get("blackout"))
         ov_vol_mult = float(ov.get("vol_multiplier", 1.0)) if ov else 1.0
@@ -2798,6 +2799,37 @@ class PulseEngine:
         self._prune_positions()
         self._persist()
         return {"ticks": self.ticks, "reasons": reasons, "stats": self.ledger.stats()}
+
+    def _dep_arb_resolver(self, pos: dict, now: float) -> "tuple[Optional[bool], Optional[str]]":
+        """Resolve a dependency-arb position's REAL parent-window outcome.
+
+        Uses the SAME authority as the directional ledger (settlement.resolve_window): official
+        Polymarket resolution first, RTDS Chainlink open/close proxy fallback (lag-gated). The
+        parent-window open price comes from the durable open-snapshot store; the close price is the
+        first post-close RTDS tick. Returns (outcome_up | None, source); None => not yet resolvable
+        so the position stays open and is retried next tick.
+        """
+        pkey = str(pos.get("parent_window_key") or "")
+        market_id = str(pos.get("parent_market_id") or "")
+        close_ts = float(pos.get("close_ts") or 0.0)
+        # capture the close snapshot once, the first post-close tick (lag-gated like directional).
+        s_close = pos.get("s_close")
+        close_lag_s = pos.get("close_lag_s")
+        if s_close is None:
+            px = self.price.current()
+            if px is not None:
+                s_close = pos["s_close"] = px
+                close_lag_s = pos["close_lag_s"] = max(0.0, float(now) - close_ts)
+        # s_open = the parent window's OPEN price (durable snapshot keyed by window id).
+        s_open = pos.get("s_open")
+        if s_open is None and pkey:
+            snap = self.price.open_snapshot(pkey)
+            s_open = pos["s_open"] = (snap.price if snap is not None else None)
+        priority = self.cfg.settlement_source_priority
+        return resolve_window(
+            market_id, gamma_feed=self.market, priority=priority,
+            s_open=s_open, s_close=s_close, close_lag_s=close_lag_s,
+            proxy_max_close_lag_s=self.cfg.proxy_max_close_lag_s)
 
     def _settle_due(self, now: float) -> None:
         for pos in list(self.ledger.open_positions()):
