@@ -15,7 +15,7 @@
   "scheduled_task": "GrokBot1-PulseBabysit",
   "paired_bot": {
     "bot_id": "bot2",
-    "vps_host": "45.32.227.242",
+    "vps_host": "45.32.224.147",
     "github": "https://github.com/minh99085/Grok-Bot-1"
   }
 }

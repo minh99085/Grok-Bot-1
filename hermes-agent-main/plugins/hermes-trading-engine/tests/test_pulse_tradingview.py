@@ -16,7 +16,7 @@ import urllib.error
 from engine.pulse.tradingview import (TradingViewIntake, normalize_direction, normalize_symbol,
                                        BAD_SECRET, MISSING_SECRET, WRONG_BOT, UNSUPPORTED_SYMBOL,
                                        STALE_TIMESTAMP, MALFORMED_DIRECTION, DUPLICATE_EVENT_ID,
-                                       INVALID_JSON)
+                                       WRONG_EVENT_SUFFIX, INVALID_JSON)
 from engine.pulse.tradingview import TradingViewEdge, RSITrendModel
 from engine.pulse.webhook import WebhookServer
 from engine.pulse.markets import OrderBook, PulseWindow
@@ -172,6 +172,16 @@ def test_wrong_bot_rejected():
     intake = _intake()
     code, body = intake.ingest(_alert(bot_name="other-bot"), now=1_000_000.0)
     assert code == 400 and body["reason"] == WRONG_BOT
+
+
+def test_wrong_event_suffix_rejected_on_bot1():
+    intake = _intake(expected_event_id_suffix="bot1")
+    code, body = intake.ingest(
+        _alert(event_id="BTCUSD-2-1782702000000-UP_STRONG-lite-2-bot2"), now=1_000_000.0)
+    assert code == 400 and body["reason"] == WRONG_EVENT_SUFFIX
+    code2, body2 = intake.ingest(
+        _alert(event_id="BTCUSD-2-1782702000000-UP_STRONG-lite-2-bot1"), now=1_000_001.0)
+    assert code2 == 200 and body2.get("accepted") is True
 
 
 def test_unsupported_symbol_rejected():
