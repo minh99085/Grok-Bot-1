@@ -274,6 +274,9 @@ class PulseConfig:
     dependency_arb_execute_enabled: bool = False  # paper execute validated violations (WS4)
     dependency_arb_max_usd: float = 50.0
     dependency_arb_epsilon: float = 0.02        # LCMM violation floor (separate from dutch-book eps)
+    dependency_arb_kelly_enabled: bool = False  # edge-proportional sizing (Lever C; default OFF)
+    dependency_arb_kelly_fraction: float = 0.25  # quarter-Kelly cap multiplier
+    dependency_arb_kelly_depth_frac: float = 0.5  # cap size at this frac of ask depth
     bregman_projection_enabled: bool = False  # WS4 Layer 2 diagnostics
     bregman_trade_authority: bool = False     # Bregman sizes Lane B when True
     bregman_alpha: float = 0.9
@@ -695,6 +698,11 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             dependency_arb_max_usd=_envf("PULSE_DEPENDENCY_ARB_MAX_USD", 50.0),
             dependency_arb_epsilon=_envf("PULSE_DEPENDENCY_ARB_EPSILON", 0.02),
+            dependency_arb_kelly_enabled=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_KELLY", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_kelly_fraction=_envf("PULSE_DEPENDENCY_ARB_KELLY_FRACTION", 0.25),
+            dependency_arb_kelly_depth_frac=_envf("PULSE_DEPENDENCY_ARB_KELLY_DEPTH_FRAC", 0.5),
             bregman_projection_enabled=str(os.getenv("PULSE_BREGMAN_PROJECTION_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             bregman_trade_authority=str(os.getenv("PULSE_BREGMAN_TRADE_AUTHORITY", "0"))
@@ -1175,7 +1183,11 @@ class PulseEngine:
         if bool(getattr(self.cfg, "dependency_arb_enabled", True)):
             from engine.pulse.dependency_arb import DependencyArbLedger
             self.dep_arb_ledger = DependencyArbLedger(
-                execute_enabled=bool(self.cfg.dependency_arb_execute_enabled))
+                execute_enabled=bool(self.cfg.dependency_arb_execute_enabled),
+                kelly_enabled=bool(self.cfg.dependency_arb_kelly_enabled),
+                kelly_fraction=float(self.cfg.dependency_arb_kelly_fraction),
+                kelly_depth_frac=float(self.cfg.dependency_arb_kelly_depth_frac),
+            )
         # market-beating benchmark for the learning blend: grade the edge model's P(up) vs the MARKET
         # price (poly_yes) per window; the blend only activates when the model actually beats the
         # market out-of-sample (kills phantom edge — calibrated != more accurate than the market).
@@ -1420,7 +1432,11 @@ class PulseEngine:
         if self.dep_arb_ledger is not None:
             from engine.pulse.dependency_arb import DependencyArbLedger
             self.dep_arb_ledger = DependencyArbLedger(
-                execute_enabled=bool(self.cfg.dependency_arb_execute_enabled))
+                execute_enabled=bool(self.cfg.dependency_arb_execute_enabled),
+                kelly_enabled=bool(self.cfg.dependency_arb_kelly_enabled),
+                kelly_fraction=float(self.cfg.dependency_arb_kelly_fraction),
+                kelly_depth_frac=float(self.cfg.dependency_arb_kelly_depth_frac),
+            )
         self._ev_before_sum = 0.0
         self._ev_after_sum = 0.0
         self._ev_n = 0
@@ -1525,6 +1541,9 @@ class PulseEngine:
             # Config is authoritative — persisted execute flag must not block env updates.
             self.dep_arb_ledger.execute_enabled = bool(
                 self.cfg.dependency_arb_execute_enabled)
+            self.dep_arb_ledger.kelly_enabled = bool(self.cfg.dependency_arb_kelly_enabled)
+            self.dep_arb_ledger.kelly_fraction = float(self.cfg.dependency_arb_kelly_fraction)
+            self.dep_arb_ledger.kelly_depth_frac = float(self.cfg.dependency_arb_kelly_depth_frac)
         self._allowlist_explored = int(acct.get("allowlist_explored", 0) or 0)
         self._allowlist_blocked = int(acct.get("allowlist_blocked", 0) or 0)
         # restore research avoid-rules, but RE-VALIDATE each against current evidence (drops legacy
@@ -1687,7 +1706,7 @@ class PulseEngine:
         if self.arb_ledger is not None:   # settle risk-free arb positions at window close (deterministic)
             self.arb_ledger.settle_due(now)
         if self.dep_arb_ledger is not None:
-            self.dep_arb_ledger.settle_due(now)
+            self.dep_arb_ledger.settle_due(now, resolver=self._resolve_dep_arb_position)
         ov = self.overlay.current(now) if self.overlay is not None else None
         ov_blackout = bool(ov and ov.get("blackout"))
         ov_vol_mult = float(ov.get("vol_multiplier", 1.0)) if ov else 1.0
@@ -1699,7 +1718,7 @@ class PulseEngine:
             arb_report=(self.arb_ledger.report() if self.arb_ledger is not None else {}),
             dep_positions=(self.dep_arb_ledger.positions
                            if self.dep_arb_ledger is not None else {}),
-            dep_report=(self.dep_arb_ledger.report()
+            dep_report=(self._dep_arb_report()
                         if self.dep_arb_ledger is not None else {}),
             starting_capital=self.cfg.starting_capital_usd)
         if getattr(self, "clob_feed", None) and windows:
@@ -2802,6 +2821,39 @@ class PulseEngine:
         self._prune_positions()
         self._persist()
         return {"ticks": self.ticks, "reasons": reasons, "stats": self.ledger.stats()}
+
+    def _resolve_dep_arb_position(self, pos: dict, now: float) -> "tuple[Optional[bool], str]":
+        """Resolve parent-UP outcome for dependency-arb settlement (Polymarket first, RTDS proxy)."""
+        if pos.get("s_close") is None:
+            px = self.price.current()
+            if px is not None:
+                pos["s_close"] = px
+                pos["close_lag_s"] = max(0.0, now - float(pos.get("close_ts") or 0))
+        priority = self.cfg.settlement_source_priority
+        close_ts = float(pos.get("close_ts") or 0)
+        if (now - close_ts) <= self.cfg.settle_grace_s:
+            priority = tuple(s for s in priority if s == "polymarket_resolution") or priority
+        return resolve_window(
+            str(pos.get("parent_market_id") or ""),
+            gamma_feed=self.market,
+            priority=priority,
+            s_open=pos.get("s_open"),
+            s_close=pos.get("s_close"),
+            close_lag_s=pos.get("close_lag_s"),
+            proxy_max_close_lag_s=self.cfg.proxy_max_close_lag_s,
+        )
+
+    def _dep_arb_walk_forward(self) -> dict:
+        from engine.pulse.walk_forward import passes_walk_forward
+        positions = list((self.dep_arb_ledger.positions or {}).values()
+                         if self.dep_arb_ledger is not None else [])
+        return passes_walk_forward(
+            positions, min_holdout_n=5, min_holdout_pf=1.0)
+
+    def _dep_arb_report(self) -> dict:
+        if self.dep_arb_ledger is None:
+            return {}
+        return self.dep_arb_ledger.report(walk_forward=self._dep_arb_walk_forward())
 
     def _settle_due(self, now: float) -> None:
         for pos in list(self.ledger.open_positions()):
@@ -4003,7 +4055,7 @@ class PulseEngine:
                                    else {"enabled": False})
         report["arbitrage"] = (self.arb_ledger.report() if self.arb_ledger is not None
                                else {"enabled": False})
-        report["dependency_arbitrage"] = (self.dep_arb_ledger.report()
+        report["dependency_arbitrage"] = (self._dep_arb_report()
                                           if self.dep_arb_ledger is not None
                                           else {"enabled": False})
         report["arb_graph"] = getattr(self, "_arb_graph_report", None) or {"nodes": 0}
@@ -4452,11 +4504,20 @@ class PulseEngine:
             if parent is None or child is None:
                 continue
             bdiag = bregman_by_parent.get(str(v.parent_window_key))
+            wf = self._dep_arb_walk_forward()
+            snap = self.price.open_snapshot(parent.event_id)
             trade = try_execute_nested_implication(
                 parent, child, v, max_usd=self.cfg.dependency_arb_max_usd,
                 epsilon=eps,
                 bregman_diag=bdiag,
                 bregman_authority=bool(self.cfg.bregman_trade_authority),
+                kelly_enabled=bool(self.cfg.dependency_arb_kelly_enabled),
+                kelly_fraction=float(self.cfg.dependency_arb_kelly_fraction),
+                kelly_depth_frac=float(self.cfg.dependency_arb_kelly_depth_frac),
+                calibration=(self.dep_arb_ledger.calibration
+                             if self.dep_arb_ledger is not None else None),
+                walk_forward_passed=bool(wf.get("passed")),
+                s_open=snap,
             )
             if trade and self.dep_arb_ledger.book(trade, now=now):
                 self.loops.beat("dependency_arb", now)
@@ -4864,7 +4925,7 @@ class PulseEngine:
                               else {"enabled": False}),
             "arbitrage": (self.arb_ledger.report() if self.arb_ledger is not None
                           else {"enabled": False}),
-            "dependency_arbitrage": (self.dep_arb_ledger.report()
+            "dependency_arbitrage": (self._dep_arb_report()
                                      if self.dep_arb_ledger is not None
                                      else {"enabled": False}),
             "arb_graph": getattr(self, "_arb_graph_report", None) or {"nodes": 0},
