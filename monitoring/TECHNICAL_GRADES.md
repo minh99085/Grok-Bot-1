@@ -1,8 +1,8 @@
 # Technical Data Grades
 
-**Generated:** 2026-06-29T20:25:29.219472+00:00  
-**Repo SHA:** `7bc7e7f896fb`  
-**Ticks:** 7 | **Settled:** 2
+**Generated:** 2026-06-29T20:26:21.827666+00:00  
+**Repo SHA:** `4b4137d3230e`  
+**Ticks:** 10 | **Settled:** 2
 
 ## Composite
 
@@ -29,7 +29,7 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | rtds_health | 100.0 | 20 |
 | tv_intake | 91.4 | 20 |
 | design_compliance | 70.0 | 25 |
-| trade_pipeline | 90.3 | 20 |
+| trade_pipeline | 90.5 | 20 |
 | gate_coupling | 61.5 | 15 |
 
 ### Rtds Health (100.0)
@@ -66,7 +66,7 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | cohort_relaxed | 100.0 | 10 |
 | tv_trade_gates_off | 0.0 | 20 |
 
-### Trade Pipeline (90.3)
+### Trade Pipeline (90.5)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
@@ -75,7 +75,7 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | execution_gate | 100.0 | 20 |
 | recon_checks | 100.0 | 15 |
 | not_halted | 100.0 | 10 |
-| uptime_ticks | 3.5 | 10 |
+| uptime_ticks | 5.0 | 10 |
 
 ### Gate Coupling (61.5)
 

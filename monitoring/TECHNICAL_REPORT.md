@@ -1,6 +1,6 @@
 # BTC Pulse — Technical Report (plain English)
 
-_Updated: 2026-06-29 20:25:29 UTC_
+_Updated: 2026-06-29 20:26:21 UTC_
 
 ## At a glance
 
@@ -12,7 +12,7 @@ _Updated: 2026-06-29 20:25:29 UTC_
 | External signals | F (45.6/100) |
 | Technical runtime | B (83.1/100) |
 | Settled trades | 2 |
-| Engine ticks | 7 |
+| Engine ticks | 10 |
 
 ## Executive summary
 
@@ -34,7 +34,7 @@ The bot needs attention: **trading performance or signal quality is weak**, even
 
 ## Infrastructure & data health
 
-- **Oracle (RTDS):** Connected; fresh (age 0.92s).
+- **Oracle (RTDS):** Connected; fresh (age 0.16s).
 - **TradingView:** 1535 valid alerts of 1754 received; observe-only=yes; MTF verdict: `partial_up_mtf`.
 - **Entry config:** tick 15.0s, max price 0.55, min edge 0.008, min R:R 0.5, 15m TTC band [450.0, 720.0]s, green path=on.
 
@@ -47,15 +47,15 @@ The bot needs attention: **trading performance or signal quality is weak**, even
 
 ## Where candidates get blocked (top gates)
 
-- `directional`: 1,039
+- `directional`: 1,042
 - `baseline_cohort_gate`: 96
 - `execution_gate`: 12
 
 ## Why recent windows didn't trade
 
 - `directional_series_not_allowed`: 6 recent eval(s)
-- `edge_below_min`: 4 recent eval(s)
-- `no_tradeable_ask`: 2 recent eval(s)
+- `edge_below_min`: 5 recent eval(s)
+- `no_tradeable_ask`: 1 recent eval(s)
 
 ## Design vs deployed (drift)
 
