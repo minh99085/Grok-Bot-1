@@ -48,7 +48,7 @@ def _engine(tmp_path, **over):
                       min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
                       settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
                       selectivity_exploration_rate=0.0, starting_capital_usd=500.0,
-                      data_dir=str(tmp_path), **over)
+                      directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False, data_dir=str(tmp_path), **over)
     return PulseEngine(cfg, market_feed=_Mkt(win), price_feed=feed), t0
 
 

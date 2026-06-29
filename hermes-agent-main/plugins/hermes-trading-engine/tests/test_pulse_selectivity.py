@@ -203,7 +203,7 @@ def _engine(tmp_path, *, deep=True, expl=0.0, **over):
     cfg = PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0,
                       min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
                       settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
-                      selectivity_exploration_rate=expl, data_dir=str(tmp_path), **over)
+                      selectivity_exploration_rate=expl, directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False, data_dir=str(tmp_path), **over)
     return PulseEngine(cfg, market_feed=_Mkt(win, deep=deep), price_feed=feed), t0
 
 

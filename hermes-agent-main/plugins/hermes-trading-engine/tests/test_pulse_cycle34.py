@@ -37,7 +37,7 @@ def test_decider_prompt_frames_mispricing_and_model_vs_market():
     fn = make_decider_fn(chat=_chat)
     fn({"cex_lead_mispricing": {"divergence": 0.1}, "model_vs_market": {"model_beats_market": False}})
     p = captured["prompt"]
-    assert "EXPLOIT MISPRICING" in p
+    assert "MISPRICING" in p and "primary edge" in p
     assert "cex_lead_mispricing" in p and "model_vs_market" in p
     assert "breakeven" in p.lower()
 

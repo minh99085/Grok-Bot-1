@@ -94,6 +94,7 @@ def _engine(tmp_path, **over):
         tradingview_webhook_port=0,
         tradingview_feature_symbol="BTCUSD",
         tradingview_allowed_symbols=("BTCUSD", "INDEX:BTCUSD"),
+        directional_down_only=False, directional_up_restrictions_enabled=False,
         data_dir=str(tmp_path), **over)
     return PulseEngine(cfg, market_feed=_Mkt(win, deep=True), price_feed=feed), t0
 

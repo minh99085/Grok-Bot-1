@@ -292,7 +292,7 @@ def _run_cycle(cfg, mkt):
 
 
 def _cfg(tmp_path):
-    return PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0,
+    return PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0, directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False,
                        min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
                        settle_grace_s=0.0, exec_max_depth_consume_frac=0.9, data_dir=str(tmp_path))
 

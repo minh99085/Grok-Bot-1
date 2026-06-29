@@ -22,6 +22,12 @@ COPY scripts /app/scripts
 COPY pytest.ini /app/pytest.ini
 COPY tests /app/tests
 
+# CI / regression gate: the image build FAILS if the test suite is red, so a broken suite can
+# never ship to the VPS. Override with --build-arg RUN_TESTS=0 ONLY for an emergency build.
+ARG RUN_TESTS=1
+RUN if [ "$RUN_TESTS" = "1" ]; then python -m pytest -q; \
+    else echo "WARNING: skipping test gate (RUN_TESTS=0)"; fi
+
 RUN mkdir -p /data
 EXPOSE 8800
 

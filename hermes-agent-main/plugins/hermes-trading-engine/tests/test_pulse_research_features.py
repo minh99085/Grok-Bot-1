@@ -157,7 +157,7 @@ def _run_cycle(tmp_path, research_enabled):
         return price["p"]
     feed = PulsePriceFeed(fetcher=fetch, source_name="rtds_chainlink",
                           vol=RollingVol(window_s=900, min_samples=8), max_open_lag_s=20.0)
-    eng = PulseEngine(PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02,
+    eng = PulseEngine(PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False,
                                   basis_buffer=0.0, min_seconds_since_open=0.0,
                                   sigma_trust_floor=0.0, min_vol_samples=2, settle_grace_s=0.0,
                                   exec_max_depth_consume_frac=0.9,

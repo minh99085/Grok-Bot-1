@@ -138,7 +138,7 @@ def test_engine_v4_observe_only_and_reconciles(tmp_path):
         return price["p"]
     feed = PulsePriceFeed(fetcher=fetch, source_name="rtds_chainlink",
                           vol=RollingVol(window_s=900, min_samples=8), max_open_lag_s=20.0)
-    cfg = PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0,
+    cfg = PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0, directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False,
                       min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
                       settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
                       tradingview_secret=SECRET, tradingview_webhook_port=0,

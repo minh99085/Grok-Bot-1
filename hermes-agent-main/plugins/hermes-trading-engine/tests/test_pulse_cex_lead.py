@@ -220,7 +220,7 @@ def _engine(tmp_path, **over):
     cfg = PulseConfig(tick_seconds=1.0, size_usd=10.0, min_edge=0.02, basis_buffer=0.0,
                       min_seconds_since_open=0.0, sigma_trust_floor=0.0, min_vol_samples=2,
                       settle_grace_s=0.0, exec_max_depth_consume_frac=0.9,
-                      exec_min_ev_after_slippage=0.0, data_dir=str(tmp_path), **over)
+                      exec_min_ev_after_slippage=0.0, directional_down_only=False, directional_block_up_until_promoted=False, directional_up_restrictions_enabled=False, data_dir=str(tmp_path), **over)
     eng = PulseEngine(cfg, market_feed=_Mkt(win), price_feed=feed)
     # inject a fresh CEX (Binance) spot far ABOVE the window open so cex_p_up diverges high from the
     # ~0.525 market mid -> a strong UP signal. Stop poll() from overwriting it.
