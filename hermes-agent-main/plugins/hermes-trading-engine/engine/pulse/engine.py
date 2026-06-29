@@ -4018,6 +4018,8 @@ class PulseEngine:
         report["profit_discovery"] = self._profit_discovery_status()
         report["five_x_improvement"] = report["profit_discovery"]
         report["directional_risk"] = {
+            "directional_enabled": bool(self.cfg.directional_enabled),
+            "strategy_mode": ("mixed" if self.cfg.directional_enabled else "arb_first"),
             "max_bankroll_frac": self.cfg.directional_max_bankroll_frac,
             "bankroll_cap_usd": round(
                 float(self.cfg.starting_capital_usd) * float(self.cfg.directional_max_bankroll_frac),
@@ -4877,6 +4879,8 @@ class PulseEngine:
             "profit_discovery": self._profit_discovery_status(),
             "five_x_improvement": self._profit_discovery_status(),
             "directional_risk": {
+                "directional_enabled": bool(self.cfg.directional_enabled),
+                "strategy_mode": ("mixed" if self.cfg.directional_enabled else "arb_first"),
                 "max_bankroll_frac": self.cfg.directional_max_bankroll_frac,
                 "bankroll_cap_usd": round(
                     float(self.cfg.starting_capital_usd)

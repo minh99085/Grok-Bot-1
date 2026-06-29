@@ -74,8 +74,14 @@ def main() -> int:
     reconciled_ok = dl_rec is True or eg_rec is True
     check("ledger_reconciled", reconciled_ok,
           "lifecycle=%s exec_gate=%s" % (dl_rec, eg_rec), "P0")
-    check("primary_edge_arbitrage", cap.get("primary_edge_source") == "arbitrage",
-          "source=%s" % cap.get("primary_edge_source"), "P2")
+    dr = st.get("directional_risk") or {}
+    risk_free = cap.get("primary_edge_source") in ("arbitrage", "dependency_arbitrage")
+    if dr.get("directional_enabled") is False:
+        check("primary_edge_risk_free", risk_free,
+              "source=%s mode=arb_first" % cap.get("primary_edge_source"), "P2")
+    else:
+        check("primary_edge_arbitrage", cap.get("primary_edge_source") == "arbitrage",
+              "source=%s" % cap.get("primary_edge_source"), "P2")
 
     # Grok
     gd = st.get("grok_decider") or {}

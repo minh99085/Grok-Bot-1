@@ -219,9 +219,19 @@ function buildRows(s){
   addRow(rows,'Total PnL',pct(cap.total_return_pct)+' ('+usd(totalPnl)+')',
     'Arb '+usd(cap.arb_realized_pnl_usd)+' · Dep '+usd(cap.dependency_arb_realized_pnl_usd)+' · Dir '+usd(cap.realized_pnl_usd),
     totalPnl>0?'green':(totalPnl>=0?'yellow':'red'));
-  addRow(rows,'Win rate',f(wr,1)+'% · '+f(L.trades,0)+' trades',
-    f(L.settled,0)+' settled · open '+f(L.open_positions,0),
-    wr>=55?'green':(wr>=45?'yellow':'red'));
+  const dirOn=dr.directional_enabled!==false;
+  if(dirOn){
+    addRow(rows,'Win rate',f(wr,1)+'% · '+f(L.trades,0)+' trades',
+      f(L.settled,0)+' settled · open '+f(L.open_positions,0),
+      wr>=55?'green':(wr>=45?'yellow':'red'));
+  }else{
+    addRow(rows,'Directional','PAUSED (arb-first lab)',
+      'TV signals observe-only — not trade authority',
+      'yellow');
+    addRow(rows,'Dep-arb activity',f(dep.executed,0)+' exec · '+f(dep.settled,0)+' settled',
+      'open '+f(dep.open||dep.open_positions,0)+' · PnL '+usd(dep.realized_profit_usd),
+      (dep.executed||0)>0?'green':'yellow');
+  }
   addRow(rows,'Open exposure',usd(dr.open_exposure_usd||cap.open_exposure_usd)+' / '+usd(dr.bankroll_cap_usd||cap.directional_bankroll_cap_usd||50),
     'Directional cap remaining',
     (dr.open_exposure_usd||cap.open_exposure_usd||0)<=(dr.bankroll_cap_usd||50)?'green':'red');
@@ -316,6 +326,11 @@ function buildRows(s){
     s.live_trading_enabled?'red':'green');
 
   addSection(rows,'Arbitrage');
+  if(!dirOn){
+    addRow(rows,'Simplex arb','waiting for book edge',
+      f(arb.arb_scan_count||0,0)+' scans · need up+down < 0.985 after fees',
+      'yellow');
+  }
   addRow(rows,'Dutch-book arb',f(arb.arb_scan_count||arb.executed,0)+' scans · '+f(arb.executed,0)+' exec',
     'PnL '+usd(arb.realized_profit_usd),
     (arb.realized_profit_usd||0)>0?'green':'yellow');
