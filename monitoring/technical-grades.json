@@ -1,8 +1,8 @@
 {
   "schema": "technical_grades/1.0",
-  "ts_utc": "2026-06-29T03:06:49.321535+00:00",
-  "repo_sha": "54625e2aeef7",
-  "ticks": 165,
+  "ts_utc": "2026-06-29T05:16:44.382399+00:00",
+  "repo_sha": "22b80205bdab",
+  "ticks": 117,
   "settled": 0,
   "report_scores": {
     "schema": "btc_pulse_report_scores/1.0",
@@ -133,7 +133,7 @@
     }
   },
   "technical_runtime": {
-    "score": 84.9,
+    "score": 82.7,
     "grade": "B",
     "components": {
       "rtds_health": {
@@ -142,9 +142,9 @@
         "contribution": 20.0
       },
       "tv_intake": {
-        "score": 99.3,
+        "score": 90.6,
         "weight": 20,
-        "contribution": 19.9
+        "contribution": 18.1
       },
       "design_compliance": {
         "score": 70.0,
@@ -152,9 +152,9 @@
         "contribution": 17.5
       },
       "trade_pipeline": {
-        "score": 98.2,
+        "score": 95.8,
         "weight": 20,
-        "contribution": 19.6
+        "contribution": 19.2
       },
       "gate_coupling": {
         "score": 52.6,
@@ -189,7 +189,7 @@
         }
       },
       "tv_intake": {
-        "score": 99.3,
+        "score": 90.6,
         "components": {
           "observe_only": {
             "score": 100.0,
@@ -202,9 +202,9 @@
             "contribution": 25.0
           },
           "reject_rate": {
-            "score": 95.1,
+            "score": 37.3,
             "weight": 15,
-            "contribution": 14.3
+            "contribution": 5.6
           },
           "trade_gates_off": {
             "score": 100.0,
@@ -274,7 +274,7 @@
         }
       },
       "trade_pipeline": {
-        "score": 98.2,
+        "score": 95.8,
         "components": {
           "accounting_integrity": {
             "score": 100.0,
@@ -302,9 +302,9 @@
             "contribution": 10.0
           },
           "uptime_ticks": {
-            "score": 82.5,
+            "score": 58.5,
             "weight": 10,
-            "contribution": 8.2
+            "contribution": 5.8
           }
         }
       },
@@ -342,7 +342,7 @@
     "note": "RTDS/oracle health, TV observe-only intake, design manifest compliance, pipeline integrity, gate coupling."
   },
   "composite": {
-    "score": 71.1,
+    "score": 70.5,
     "grade": "C",
     "weights": {
       "report_overall": 0.7,
@@ -351,42 +351,42 @@
   },
   "vps_score_history_tail": [
     {
-      "utc": "2026-06-29 00:45:21 UTC",
-      "settled": 0,
-      "overall": 63.5,
-      "trading_performance": 66.8,
-      "operation": 71.1,
-      "external_signals": 49.4
-    },
-    {
-      "utc": "2026-06-29 01:15:36 UTC",
-      "settled": 0,
-      "overall": 64.4,
-      "trading_performance": 68.4,
-      "operation": 71.5,
-      "external_signals": 49.4
-    },
-    {
-      "utc": "2026-06-29 01:45:51 UTC",
-      "settled": 0,
-      "overall": 64.6,
-      "trading_performance": 68.7,
-      "operation": 71.5,
-      "external_signals": 49.4
-    },
-    {
-      "utc": "2026-06-29 02:15:51 UTC",
-      "settled": 0,
-      "overall": 64.7,
-      "trading_performance": 68.9,
-      "operation": 71.5,
-      "external_signals": 49.4
-    },
-    {
       "utc": "2026-06-29 02:46:00 UTC",
       "settled": 0,
       "overall": 65.0,
       "trading_performance": 69.6,
+      "operation": 71.5,
+      "external_signals": 49.4
+    },
+    {
+      "utc": "2026-06-29 03:16:04 UTC",
+      "settled": 0,
+      "overall": 65.2,
+      "trading_performance": 70.0,
+      "operation": 71.5,
+      "external_signals": 49.4
+    },
+    {
+      "utc": "2026-06-29 03:46:19 UTC",
+      "settled": 0,
+      "overall": 65.2,
+      "trading_performance": 70.0,
+      "operation": 71.5,
+      "external_signals": 49.4
+    },
+    {
+      "utc": "2026-06-29 04:16:34 UTC",
+      "settled": 0,
+      "overall": 65.2,
+      "trading_performance": 70.0,
+      "operation": 71.5,
+      "external_signals": 49.4
+    },
+    {
+      "utc": "2026-06-29 04:46:49 UTC",
+      "settled": 0,
+      "overall": 65.2,
+      "trading_performance": 70.0,
       "operation": 71.5,
       "external_signals": 49.4
     }

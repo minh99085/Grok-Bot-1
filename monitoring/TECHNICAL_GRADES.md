@@ -1,16 +1,16 @@
 # Technical Data Grades
 
-**Generated:** 2026-06-29T03:06:49.321535+00:00  
-**Repo SHA:** `54625e2aeef7`  
-**Ticks:** 165 | **Settled:** 0
+**Generated:** 2026-06-29T05:16:44.382399+00:00  
+**Repo SHA:** `22b80205bdab`  
+**Ticks:** 117 | **Settled:** 0
 
 ## Composite
 
 | Metric | Score | Grade |
 |--------|------:|-------|
-| **Composite** | **71.1** | **C** |
+| **Composite** | **70.5** | **C** |
 | Report overall | 65.2 | D |
-| Technical runtime | 84.9 | B |
+| Technical runtime | 82.7 | B |
 
 ## Report scores (engine)
 
@@ -27,9 +27,9 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | Component | Score | Weight |
 |-----------|------:|-------:|
 | rtds_health | 100.0 | 20 |
-| tv_intake | 99.3 | 20 |
+| tv_intake | 90.6 | 20 |
 | design_compliance | 70.0 | 25 |
-| trade_pipeline | 98.2 | 20 |
+| trade_pipeline | 95.8 | 20 |
 | gate_coupling | 52.6 | 15 |
 
 ### Rtds Health (100.0)
@@ -41,13 +41,13 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | stability | 100.0 | 20 |
 | price_feed | 100.0 | 15 |
 
-### Tv Intake (99.3)
+### Tv Intake (90.6)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
 | observe_only | 100.0 | 25 |
 | alert_flow | 100.0 | 25 |
-| reject_rate | 95.1 | 15 |
+| reject_rate | 37.3 | 15 |
 | trade_gates_off | 100.0 | 20 |
 | mtf_freshness | 100.0 | 15 |
 
@@ -66,7 +66,7 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | cohort_relaxed | 100.0 | 10 |
 | tv_trade_gates_off | 0.0 | 20 |
 
-### Trade Pipeline (98.2)
+### Trade Pipeline (95.8)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
@@ -75,7 +75,7 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | execution_gate | 100.0 | 20 |
 | recon_checks | 100.0 | 15 |
 | not_halted | 100.0 | 10 |
-| uptime_ticks | 82.5 | 10 |
+| uptime_ticks | 58.5 | 10 |
 
 ### Gate Coupling (52.6)
 
@@ -91,8 +91,8 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 
 | UTC | Settled | Overall | Trading | Operation | External |
 |-----|--------:|--------:|--------:|----------:|---------:|
-| 2026-06-29 00:45:21 UTC | 0 | 63.5 | 66.8 | 71.1 | 49.4 |
-| 2026-06-29 01:15:36 UTC | 0 | 64.4 | 68.4 | 71.5 | 49.4 |
-| 2026-06-29 01:45:51 UTC | 0 | 64.6 | 68.7 | 71.5 | 49.4 |
-| 2026-06-29 02:15:51 UTC | 0 | 64.7 | 68.9 | 71.5 | 49.4 |
 | 2026-06-29 02:46:00 UTC | 0 | 65.0 | 69.6 | 71.5 | 49.4 |
+| 2026-06-29 03:16:04 UTC | 0 | 65.2 | 70.0 | 71.5 | 49.4 |
+| 2026-06-29 03:46:19 UTC | 0 | 65.2 | 70.0 | 71.5 | 49.4 |
+| 2026-06-29 04:16:34 UTC | 0 | 65.2 | 70.0 | 71.5 | 49.4 |
+| 2026-06-29 04:46:49 UTC | 0 | 65.2 | 70.0 | 71.5 | 49.4 |
