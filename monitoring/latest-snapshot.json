@@ -1,11 +1,11 @@
 {
   "schema": "timeline/1.0",
-  "ts_utc": "2026-06-29T05:16:44.191354+00:00",
+  "ts_utc": "2026-06-29T11:34:41.240968+00:00",
   "source": "local_latest",
-  "repo_sha": "22b80205bdab",
+  "repo_sha": "e7b1c4ec0592",
   "config_fingerprint": "58e8e3a4e0533ee0",
   "runtime": {
-    "ticks": 117,
+    "ticks": 1215,
     "status_age_s": null,
     "paper_only": true,
     "halted": false,
@@ -31,36 +31,36 @@
     "require_strong_cex": false
   },
   "tv": {
-    "alerts_valid": 560,
-    "alerts_rejected": 148,
-    "mtf_verdict": "confirmed_down_mtf",
-    "trend_fresh": 3,
+    "alerts_valid": 969,
+    "alerts_rejected": 219,
+    "mtf_verdict": "single_tf",
+    "trend_fresh": 1,
     "mtf_count": 3,
     "signal_gate": false,
     "mtf_gate": false,
     "by_tf": {
       "2m": {
         "dir": "DOWN",
-        "strength": 0.71,
-        "age_s": 23.0
+        "strength": 0.42,
+        "age_s": 24.0
       },
       "3m": {
-        "dir": "DOWN",
-        "strength": 0.73,
-        "age_s": 75.5
+        "dir": "FLAT",
+        "strength": 0.0,
+        "age_s": 82.3
       },
       "4m": {
-        "dir": "DOWN",
-        "strength": 0.46,
-        "age_s": 23.3
+        "dir": "FLAT",
+        "strength": 0.0,
+        "age_s": 142.8
       }
     }
   },
   "oracle": {
-    "btc_usd": 59501.821397061925,
+    "btc_usd": 59879.823289013424,
     "source": "rtds_chainlink",
     "rtds_connected": true,
-    "oracle_age_s": 0.02
+    "oracle_age_s": 0.78
   },
   "ledger": {
     "trades": 0,

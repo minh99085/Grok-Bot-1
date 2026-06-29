@@ -1,18 +1,18 @@
 # BTC Pulse — Technical Report (plain English)
 
-_Updated: 2026-06-29 05:16:44 UTC_
+_Updated: 2026-06-29 11:34:41 UTC_
 
 ## At a glance
 
 | | |
 |---|---|
-| **Overall grade** | **C** (70.5/100) — Below target — review config and performance. |
+| **Overall grade** | **C** (70.0/100) — Below target — review config and performance. |
 | Trading performance | C (70.0/100) |
 | Engine operation | C (71.5/100) |
 | External signals | F (49.4/100) |
-| Technical runtime | B (82.7/100) |
+| Technical runtime | B (81.3/100) |
 | Settled trades | 0 |
-| Engine ticks | 117 |
+| Engine ticks | 1215 |
 
 ## Executive summary
 
@@ -24,7 +24,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 |---|---|
 | Mode | Paper only |
 | Starting capital | $500.00 |
-| Total on hand | $565.54 (13.1% return) |
+| Total on hand | $552.18 (10.4% return) |
 | Directional PnL | $0.00 |
 | Arb PnL | $0.00 |
 | Win rate | — (0 settled) |
@@ -34,8 +34,8 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Infrastructure & data health
 
-- **Oracle (RTDS):** Connected; fresh (age 0.02s).
-- **TradingView:** 560 valid alerts of 708 received; observe-only=yes; MTF verdict: `confirmed_down_mtf`.
+- **Oracle (RTDS):** Connected; fresh (age 0.78s).
+- **TradingView:** 969 valid alerts of 1188 received; observe-only=yes; MTF verdict: `single_tf`.
 - **Entry config:** tick 15.0s, max price 0.55, min edge 0.008, min R:R 0.5, 15m TTC band [450.0, 720.0]s, green path=on.
 
 ## What's dragging the score
@@ -65,9 +65,8 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 **Good:**
 - Oracle and RTDS feeds are healthy and fresh.
-- TradingView webhooks are flowing; observe-only lock is respected.
 - Ledger and lifecycle accounting reconcile cleanly.
-- Paper portfolio is up 13.1% overall (arb helping).
+- Paper portfolio is up 10.4% overall (arb helping).
 
 **Watch:**
 - External signals (TV hit rate, Grok accuracy) are not yet predictive of outcomes.
@@ -78,7 +77,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Score trend (VPS history)
 
-Report overall moved **flat** (65.0 → 65.2) over the last 5 recorded snapshots. Trading: 69.6 → 70.0; Operation: 71.5 → 71.5.
+Report overall moved **flat** (65.2 → 65.2) over the last 5 recorded snapshots. Trading: 70.0 → 70.0; Operation: 71.5 → 71.5.
 
 ---
 
