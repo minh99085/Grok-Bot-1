@@ -12,7 +12,8 @@
   "plugin_path": "/opt/Grok-Bot-1/hermes-agent-main/plugins/hermes-trading-engine",
   "dashboard": "http://45.32.227.242/",
   "bundle_name": "grok-bot1-sync.bundle",
-  "scheduled_task": "GrokBot1-PulseBabysit",
+  "scheduled_task": null,
+  "babysit_autopilot": false,
   "paired_bot": {
     "bot_id": "bot2",
     "vps_host": "45.32.224.147",
