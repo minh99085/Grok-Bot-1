@@ -1,5 +1,10 @@
 # VPS deploy — mandatory sequence (operator rule)
 
+**Operator memory (ALWAYS):** After every VPS sync, **always remove orphans and rebuild** —
+`docker compose down --remove-orphans` → `build` → `up -d --force-recreate --remove-orphans`.
+Use `.\scripts\sync-vps.ps1` (default; rebuild ON). **Never** `-SkipRebuild` unless the operator
+explicitly requests a code-only sync in the current message. No `docker compose restart` shortcuts.
+
 **Non-negotiable:** After every push to `origin/main`, sync the VPS to that SHA, remove orphan containers, and rebuild — unless `state.json` is in `hands_off`.
 
 ## Required sequence

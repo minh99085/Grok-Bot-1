@@ -25,7 +25,7 @@ treat paper PnL as real capital; fix WR/PF/bleed, not just trade rate. Read
 |------|------|
 | Workspace | `C:\Users\tieut\Grok-Bot-1` |
 | Plugin | `hermes-agent-main/plugins/hermes-trading-engine` |
-| Deploy | `.\scripts\sync-vps.ps1` (always orphan cleanup + rebuild) |
+| Deploy | `.\scripts\sync-vps.ps1` — **always** orphan cleanup + full rebuild after sync (never `-SkipRebuild` unless operator says code-only) |
 | VPS | `root@45.32.227.242` `/opt/Grok-Bot-1` |
 | Dashboard | `http://45.32.227.242/` |
 | State | `scripts/pulse-babysit/state.json` |

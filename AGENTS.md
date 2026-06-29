@@ -33,7 +33,9 @@ explicitly says otherwise **in the current message**. Full frozen keys and behav
 - **Local workspace:** prefer `C:\Users\tieut\Grok-Bot-1` when working from this machine.
 - **Default branch:** `main`.
 - **VPS deploy (MANDATORY after every push to `main`):** See `.grok/rules/vps-deploy-mandatory.md`.
-  Push → `.\scripts\sync-vps.ps1` (sync `origin/main` + orphan cleanup + rebuild + verify). **Never** `-SkipRebuild` unless operator explicitly requests it.
+  **Always remove orphans and rebuild after VPS sync** — `.\scripts\sync-vps.ps1` (default rebuild ON:
+  `down --remove-orphans` → `build` → `up -d --force-recreate --remove-orphans`) → `verify-sync.ps1`.
+  **Never** `-SkipRebuild` unless operator explicitly requests code-only sync in the current message.
 
 ## Project layout
 

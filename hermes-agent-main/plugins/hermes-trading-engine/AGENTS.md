@@ -95,8 +95,8 @@ VPS deploy procedure (the VPS cannot `git fetch origin` — use a git bundle or 
 **One command (Windows, from repo root):**
 ```powershell
 git push origin main
-.\scripts\sync-vps.ps1              # sync + down --remove-orphans -> build -> up -d (default)
-.\scripts\sync-vps.ps1 -SkipRebuild # code sync only (rare)
+.\scripts\sync-vps.ps1              # ALWAYS: sync + down --remove-orphans -> build -> up -d (operator memory)
+.\scripts\sync-vps.ps1 -SkipRebuild # code sync only — operator must explicitly request in current message
 .\scripts\verify-sync.ps1           # check only; exit 1 if diverged
 ```
 

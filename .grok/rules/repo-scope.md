@@ -32,7 +32,9 @@ Wipe before pull; remove stale tracked files before push; require `FULL_REPORT.m
 
 **Full policy:** `.grok/rules/vps-deploy-mandatory.md`
 
-**Non-negotiable:** Push → `.\scripts\sync-vps.ps1` (sync `origin/main` + orphan cleanup + rebuild) → verify. Execute yourself; never leave VPS stale.
+**Non-negotiable (operator memory):** After every VPS sync, **always remove orphans and rebuild**.
+Push → `.\scripts\sync-vps.ps1` (sync `origin/main` + `down --remove-orphans` → `build` →
+`up -d --force-recreate --remove-orphans`) → `verify-sync.ps1`. Execute yourself; never leave VPS stale.
 
 ### Standard sequence
 

@@ -1,4 +1,6 @@
 # Sync origin/main -> Bot 1 VPS, then ALWAYS down --remove-orphans -> build -> up --remove-orphans.
+# Operator memory: ALWAYS remove orphans and rebuild after VPS sync (default; never -SkipRebuild
+# unless operator explicitly requests code-only sync in the current message).
 # Policy: .grok/rules/vps-deploy-mandatory.md — never push without running this (except hands_off).
 [CmdletBinding()]
 param(
