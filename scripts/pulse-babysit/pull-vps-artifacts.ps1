@@ -3,7 +3,7 @@
 param(
     [string]$SshKey = "$env:USERPROFILE\.ssh\bot1_grok_temp",
     [string]$VpsHost = "45.32.227.242",
-    [string]$VpsUser = "root",
+    [string]$VpsUser = "linuxuser",
     [string]$Container = "hermes-training",
     [switch]$SkipPush
 )

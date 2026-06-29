@@ -24,6 +24,8 @@ http://<vps-ip>/webhooks/tradingview
 
 Paste your VPS `TRADINGVIEW_WEBHOOK_SECRET` into the indicator **Hermes webhook secret** input on each chart.
 
+**Dual-bot (Bot 1 + Bot 2):** add a **second** indicator instance per chart. Set **Event ID suffix** to `bot1` on Bot 1 charts and `bot2` on Bot 2 charts (avoids `duplicate_event_id` rejects). Point each alert at the correct VPS webhook URL.
+
 ### Indicator toggles (recommended)
 
 | Setting | Recommended | Why |

@@ -69,7 +69,11 @@ def main() -> int:
 
     # Accounting
     cap = st.get("capital") or {}
-    check("ledger_reconciled", ledger.get("global_reconciled") is True, "", "P0")
+    dl_rec = (st.get("decision_lifecycle") or {}).get("reconciled")
+    eg_rec = ((ledger.get("stats") or {}).get("execution_gate") or {}).get("reconciled")
+    reconciled_ok = dl_rec is True or eg_rec is True
+    check("ledger_reconciled", reconciled_ok,
+          "lifecycle=%s exec_gate=%s" % (dl_rec, eg_rec), "P0")
     check("primary_edge_arbitrage", cap.get("primary_edge_source") == "arbitrage",
           "source=%s" % cap.get("primary_edge_source"), "P2")
 

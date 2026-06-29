@@ -140,11 +140,11 @@ UPDATES = {
     # 5m brain (scan/LCMM child) + 15m hands (directional + parent). No 5m directional.
     "PULSE_SERIES_SLUGS": "btc-up-or-down-5m,btc-up-or-down-15m",
     "PULSE_DIRECTIONAL_SERIES_SLUGS": "btc-up-or-down-15m",
-    # Epsilon = fees + slippage floor (Polymarket BTC fees ~0); capture 0.02-0.04 residual band.
+    # Epsilon = fees + slippage (~0.01); 0.015 captures 0.02-0.04 near-miss band (deep-scan 2026-06-29).
     "PULSE_ARB_FEES": "0.0",
-    "PULSE_ARB_EPSILON": "0.02",
-    "PULSE_ARB_EPSILON_5M": "0.02",
-    "PULSE_ARB_EPSILON_15M": "0.02",
+    "PULSE_ARB_EPSILON": "0.015",
+    "PULSE_ARB_EPSILON_5M": "0.015",
+    "PULSE_ARB_EPSILON_15M": "0.015",
     "PULSE_DEPENDENCY_ARB_EPSILON": "0.02",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
