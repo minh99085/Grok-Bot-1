@@ -1,22 +1,18 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-28 18:34 UTC_
+_Updated: 2026-06-29 00:21 UTC_
 
 ## Last cycle
 
 | | |
 |---|---|
-| **Cycle #** | 15 |
-| **Checked at** | 2026-06-28 18:34 UTC |
+| **Cycle #** | 2 |
+| **Checked at** | 2026-06-29 00:04 UTC |
 | **Result** | **issues** |
 | **What it means** | Issues found — UP trades still lose money. More UP blocks may have been added. |
-| **Next check after** | 2026-06-28 18:01 UTC |
+| **Next check after** | 2026-06-28 22:00 UTC |
 
 **Issues flagged:** win_rate_below_target, up_side_bleed, cheap_down_bleed
-
-**Fixes applied:**
-
-- wr_tune_min_entry_0.46_max_price_0.60
 
 ## How the bot is doing now
 
@@ -24,12 +20,12 @@ _Updated: 2026-06-28 18:34 UTC_
 |---|---|
 | **Mode** | Paper only (fake money) |
 | **Started with** | $500.00 |
-| **Total now** | $656.94 (31.39% return) |
-| **Arb profit** | $59.73 (7 trades) |
-| **Directional profit** | $58.78 |
-| **Win rate** | 64.3% (129 settled trades) |
-| **UP win rate** | 50.0% |
-| **DOWN win rate** | 67.0% |
+| **Total now** | $531.88 (6.38% return) |
+| **Arb profit** | $0.00 (0 trades) |
+| **Directional profit** | $0.00 |
+| **Win rate** | — (0 settled trades) |
+| **UP win rate** | — |
+| **DOWN win rate** | — |
 | **Bot stopped?** | No — bot is running |
 | **Overall grade** | — (—/100) |
 
@@ -37,19 +33,19 @@ _Updated: 2026-06-28 18:34 UTC_
 
 | Market | Trades | Win rate | PnL |
 |--------|--------|----------|-----|
-| **15m** | 62 | 66.1% | $58.60 |
-| **5m** | 19 | 63.2% | $-1.31 |
+| **15m** | — | — | — |
+| **5m** | — | — | — |
 
 ### TradingView (INDEX:BTCUSD)
 
-- Alerts received: **1614**
+- Alerts received: **208**
 - 5-chart trend: **conflict_3tf** (3/3 fresh)
 
 ## Quick verdict
 
-**Good:** Making money on paper (+31.4%); Arbitrage is doing most of the work; DOWN trades work well; Bot is running normally.
+**Good:** Making money on paper (+6.4%); Bot is running normally.
 
-**Watch:** UP trades still weak (coin-flip or worse); Cycle flagged UP-side losses.
+**Watch:** Cycle flagged UP-side losses.
 
 ---
 

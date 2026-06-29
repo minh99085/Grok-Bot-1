@@ -1,9 +1,9 @@
 {
   "schema": "technical_grades/1.0",
-  "ts_utc": "2026-06-28T18:34:01.283103+00:00",
-  "repo_sha": "7d93cf9a4252",
-  "ticks": 366,
-  "settled": 129,
+  "ts_utc": "2026-06-29T00:21:16.609258+00:00",
+  "repo_sha": "b8c9759d179e",
+  "ticks": 655,
+  "settled": 0,
   "report_scores": {
     "schema": "btc_pulse_report_scores/1.0",
     "weights": {
@@ -12,23 +12,23 @@
       "external_signals": 0.25
     },
     "trading_performance": {
-      "score": 80.6,
-      "grade": "B",
+      "score": 66.4,
+      "grade": "D",
       "components": {
         "return_pct": {
-          "score": 100.0,
+          "score": 81.9,
           "weight": 20,
-          "contribution": 20.0
+          "contribution": 16.4
         },
         "win_rate": {
-          "score": 48.7,
+          "score": 50.0,
           "weight": 25,
-          "contribution": 12.2
+          "contribution": 12.5
         },
         "profit_factor": {
-          "score": 71.7,
+          "score": 50.0,
           "weight": 15,
-          "contribution": 10.8
+          "contribution": 7.5
         },
         "directional_pnl": {
           "score": 100.0,
@@ -36,9 +36,9 @@
           "contribution": 15.0
         },
         "side_balance": {
-          "score": 77.2,
+          "score": 50.0,
           "weight": 10,
-          "contribution": 7.7
+          "contribution": 5.0
         },
         "accounting_integrity": {
           "score": 100.0,
@@ -46,16 +46,16 @@
           "contribution": 10.0
         },
         "sample_size": {
-          "score": 100.0,
+          "score": 0.0,
           "weight": 5,
-          "contribution": 5.0
+          "contribution": 0.0
         }
       },
       "note": "Profitability, win-rate, side balance (DOWN>UP), and ledger integrity."
     },
     "operation": {
-      "score": 88.3,
-      "grade": "B+",
+      "score": 70.9,
+      "grade": "C",
       "components": {
         "accounting_integrity": {
           "score": 100.0,
@@ -78,31 +78,31 @@
           "contribution": 20.0
         },
         "pipeline_activity": {
-          "score": 100.0,
+          "score": 65.7,
           "weight": 15,
-          "contribution": 15.0
+          "contribution": 9.9
         },
         "low_errors": {
-          "score": 81.9,
+          "score": 0.0,
           "weight": 15,
-          "contribution": 12.3
+          "contribution": 0.0
         }
       },
       "note": "Engine health: reconciliation, loops, stops, and pipeline activity."
     },
     "external_signals": {
-      "score": 47.0,
+      "score": 49.4,
       "grade": "F",
       "components": {
         "tv_aligned_edge": {
-          "score": 43.0,
+          "score": 30.0,
           "weight": 30,
-          "contribution": 12.9
+          "contribution": 9.0
         },
         "tv_hit_rate": {
-          "score": 0.4,
+          "score": 50.0,
           "weight": 15,
-          "contribution": 0.1
+          "contribution": 7.5
         },
         "tv_alert_flow": {
           "score": 100.0,
@@ -110,14 +110,14 @@
           "contribution": 15.0
         },
         "grok_accuracy": {
-          "score": 0.0,
+          "score": 32.5,
           "weight": 15,
-          "contribution": 0.0
+          "contribution": 4.9
         },
         "entry_gates_active": {
-          "score": 100.0,
+          "score": 60.0,
           "weight": 15,
-          "contribution": 15.0
+          "contribution": 9.0
         },
         "cex_lead_proven": {
           "score": 40.0,
@@ -128,23 +128,23 @@
       "note": "External signal quality and how well signals align with bot outcomes."
     },
     "overall": {
-      "score": 74.1,
-      "grade": "C"
+      "score": 63.3,
+      "grade": "D"
     }
   },
   "technical_runtime": {
-    "score": 87.7,
-    "grade": "B+",
+    "score": 84.7,
+    "grade": "B",
     "components": {
       "rtds_health": {
-        "score": 100.0,
+        "score": 97.0,
         "weight": 20,
-        "contribution": 20.0
+        "contribution": 19.4
       },
       "tv_intake": {
-        "score": 99.9,
+        "score": 99.4,
         "weight": 20,
-        "contribution": 20.0
+        "contribution": 19.9
       },
       "design_compliance": {
         "score": 70.0,
@@ -157,14 +157,14 @@
         "contribution": 20.0
       },
       "gate_coupling": {
-        "score": 68.4,
+        "score": 52.6,
         "weight": 15,
-        "contribution": 10.3
+        "contribution": 7.9
       }
     },
     "subscores": {
       "rtds_health": {
-        "score": 100.0,
+        "score": 97.0,
         "components": {
           "connected": {
             "score": 100.0,
@@ -177,9 +177,9 @@
             "contribution": 30.0
           },
           "stability": {
-            "score": 100.0,
+            "score": 85.0,
             "weight": 20,
-            "contribution": 20.0
+            "contribution": 17.0
           },
           "price_feed": {
             "score": 100.0,
@@ -189,7 +189,7 @@
         }
       },
       "tv_intake": {
-        "score": 99.9,
+        "score": 99.4,
         "components": {
           "observe_only": {
             "score": 100.0,
@@ -202,9 +202,9 @@
             "contribution": 25.0
           },
           "reject_rate": {
-            "score": 99.6,
+            "score": 95.7,
             "weight": 15,
-            "contribution": 14.9
+            "contribution": 14.4
           },
           "trade_gates_off": {
             "score": 100.0,
@@ -309,32 +309,32 @@
         }
       },
       "gate_coupling": {
-        "score": 68.4,
+        "score": 52.6,
         "components": {
           "lifecycle_funnel": {
-            "score": 37.5,
+            "score": 30.0,
             "weight": 25,
-            "contribution": 9.4
+            "contribution": 7.5
           },
           "exec_pass_rate": {
-            "score": 90.1,
+            "score": 40.0,
             "weight": 25,
-            "contribution": 22.5
+            "contribution": 10.0
           },
           "reject_diversity": {
-            "score": 69.3,
+            "score": 63.2,
             "weight": 20,
-            "contribution": 13.9
+            "contribution": 12.6
           },
           "cohort_session_load": {
-            "score": 76.0,
+            "score": 100.0,
             "weight": 15,
-            "contribution": 11.4
+            "contribution": 15.0
           },
           "recent_eval_spread": {
-            "score": 75.0,
+            "score": 50.0,
             "weight": 15,
-            "contribution": 11.2
+            "contribution": 7.5
           }
         }
       }
@@ -342,8 +342,8 @@
     "note": "RTDS/oracle health, TV observe-only intake, design manifest compliance, pipeline integrity, gate coupling."
   },
   "composite": {
-    "score": 78.2,
-    "grade": "C+",
+    "score": 69.7,
+    "grade": "D",
     "weights": {
       "report_overall": 0.7,
       "technical_runtime": 0.3
@@ -351,44 +351,44 @@
   },
   "vps_score_history_tail": [
     {
-      "utc": "2026-06-28 17:16:56 UTC",
-      "settled": 126,
-      "overall": 73.4,
-      "trading_performance": 79.1,
-      "operation": 88.5,
-      "external_signals": 47.0
+      "utc": "2026-06-28 22:16:10 UTC",
+      "settled": 0,
+      "overall": 59.1,
+      "trading_performance": 58.9,
+      "operation": 69.4,
+      "external_signals": 49.4
     },
     {
-      "utc": "2026-06-28 17:31:56 UTC",
-      "settled": 127,
-      "overall": 73.7,
-      "trading_performance": 79.7,
-      "operation": 88.5,
-      "external_signals": 47.0
+      "utc": "2026-06-28 22:46:25 UTC",
+      "settled": 0,
+      "overall": 59.9,
+      "trading_performance": 60.3,
+      "operation": 69.7,
+      "external_signals": 49.4
     },
     {
-      "utc": "2026-06-28 17:47:11 UTC",
-      "settled": 128,
-      "overall": 73.9,
-      "trading_performance": 80.1,
-      "operation": 88.4,
-      "external_signals": 47.0
+      "utc": "2026-06-28 23:15:10 UTC",
+      "settled": 0,
+      "overall": 61.4,
+      "trading_performance": 63.1,
+      "operation": 70.1,
+      "external_signals": 49.4
     },
     {
-      "utc": "2026-06-28 18:17:11 UTC",
-      "settled": 128,
-      "overall": 73.9,
-      "trading_performance": 80.1,
-      "operation": 88.3,
-      "external_signals": 47.0
+      "utc": "2026-06-28 23:45:11 UTC",
+      "settled": 0,
+      "overall": 62.1,
+      "trading_performance": 64.3,
+      "operation": 70.4,
+      "external_signals": 49.4
     },
     {
-      "utc": "2026-06-28 18:31:11 UTC",
-      "settled": 129,
-      "overall": 74.1,
-      "trading_performance": 80.6,
-      "operation": 88.3,
-      "external_signals": 47.0
+      "utc": "2026-06-29 00:15:10 UTC",
+      "settled": 0,
+      "overall": 63.3,
+      "trading_performance": 66.4,
+      "operation": 70.8,
+      "external_signals": 49.4
     }
   ]
 }
