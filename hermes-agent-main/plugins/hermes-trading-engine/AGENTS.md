@@ -42,12 +42,11 @@ pulse paper engine profitable, fast.
   reconcile the VPS to a clean `git` state at that commit and verify `git rev-parse HEAD` on the VPS
   equals `origin/main`. Never leave `main` and the VPS diverged, and never leave a change merged in
   one place but not the other — merge + sync both, every time.
-- **ALWAYS push every full report to the `vps_full_reports/` directory on `main`** (the repo's
-  `vps_full_reports/` tree). Whenever you pull a
-  full report, refresh `vps_full_reports/latest/` (`btc_pulse_light_report.json`,
-  `btc_pulse_status.json`, `btc_pulse_ledger.json`, `btc_pulse_meta_bundle.json`, `report.md`,
-  `reconciliation_report.md`, `vps_state.txt`) from the live VPS container and commit + push it to
-  `main`.
+- **ALWAYS generate a real full report on VPS and publish only to `vps_full_reports/latest/` on
+  `main`.** See repo `.grok/rules/vps-full-report.md`. Engine `_persist` must write `FULL_REPORT.md`
+  plus the full provenance bundle to `/data` every tick. On pull: wipe `latest/`, pull fresh from
+  VPS, remove stale tracked files, commit + push to `origin/main`. Canonical URL:
+  https://github.com/minh99085/Grok-Bot-1/tree/main/vps_full_reports/latest
 
 - **HARD SAFETY INVARIANT (never relaxed):** PAPER ONLY. No real order, no wallet, no signing.
   There is no live-execution code path in `engine/pulse`, and `scripts/run_btc_pulse.py`

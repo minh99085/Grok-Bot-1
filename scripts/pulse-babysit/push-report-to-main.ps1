@@ -11,6 +11,7 @@ if (-not $RepoRoot) {
 
 $Latest = Join-Path $RepoRoot "vps_full_reports\latest"
 $Required = @(
+    "FULL_REPORT.md",
     "report.md",
     "report.docx",
     "btc_pulse_status.json",
@@ -38,6 +39,15 @@ try {
         if ($raw -match '"profit_factor"\s*:\s*([0-9.]+)') { $pf = $Matches[1] }
     } catch {
         Write-Warning "Could not parse status JSON for commit message: $($_.Exception.Message)"
+    }
+
+    $tracked = @(git ls-files "vps_full_reports/latest/")
+    foreach ($rel in $tracked) {
+        $local = Join-Path $RepoRoot ($rel -replace '/', '\')
+        if (-not (Test-Path $local)) {
+            git rm -f -- $rel
+            Write-Host "Removed stale tracked file: $rel"
+        }
     }
 
     git add -f "vps_full_reports/latest/"

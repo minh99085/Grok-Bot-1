@@ -38,8 +38,10 @@ explicitly says otherwise **in the current message**. Full frozen keys and behav
 ## Project layout
 
 - Trading bot plugin: `hermes-agent-main/plugins/hermes-trading-engine/`
-- Full VPS reports: `vps_full_reports/latest/` — **always commit + push to `main` after pull**
-  (includes `report.docx`; automatic via `pull-vps-artifacts.ps1`)
+- Full VPS reports: **only** `vps_full_reports/latest/` on `main` — see `.grok/rules/vps-full-report.md`.
+  Engine must generate a **real full report** (`FULL_REPORT.md` + provenance bundle). On every pull:
+  wipe `latest/`, pull fresh from VPS, remove stale tracked files, commit + push to `origin/main`.
+  Canonical URL: https://github.com/minh99085/Grok-Bot-1/tree/main/vps_full_reports/latest
 - Design townhall: `Design Townhall` (repo root)
 - Operator guide for the pulse engine: `hermes-agent-main/plugins/hermes-trading-engine/AGENTS.md`
 - Autonomous closed loop: `/pulse-babysit cycle` or `.\scripts\pulse-babysit\install-scheduled-task.ps1` (15m soak default; see `.grok/skills/pulse-babysit/SKILL.md`)

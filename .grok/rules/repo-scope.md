@@ -20,6 +20,14 @@ If `phase: hands_off` and `now < hands_off_until`: pause all cycles/deploys; res
 
 **Baseline** for compare: `baseline_at_hands_off` in state.json (103 trades, $584.91, 61.2% WR).
 
+## VPS full report — MANDATORY publish location
+
+Read **`.grok/rules/vps-full-report.md`**. Publish snapshots **only** to
+`vps_full_reports/latest/` on `main`:
+https://github.com/minh99085/Grok-Bot-1/tree/main/vps_full_reports/latest
+
+Wipe before pull; remove stale tracked files before push; require `FULL_REPORT.md`.
+
 ## VPS deploy — MANDATORY after every push to `main` (except hands_off)
 
 **Full policy:** `.grok/rules/vps-deploy-mandatory.md`

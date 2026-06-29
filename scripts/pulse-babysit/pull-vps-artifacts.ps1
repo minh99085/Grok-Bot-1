@@ -11,6 +11,10 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $Dest = Join-Path $RepoRoot "vps_full_reports\latest"
+if (Test-Path $Dest) {
+    Get-ChildItem -Path $Dest -Force | Remove-Item -Recurse -Force
+    Write-Host "Cleared stale files in vps_full_reports/latest/"
+}
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 
 $sshArgs = @("-i", $SshKey, "-o", "ConnectTimeout=20", "-o", "StrictHostKeyChecking=no", "${VpsUser}@${VpsHost}")
@@ -62,14 +66,12 @@ try {
 }
 
 $volumeRequired = @(
+    "FULL_REPORT.md",
     "btc_pulse_light_report.json",
     "btc_pulse_tradingview.json",
     "report.md",
     "report.docx",
-    "btc_pulse_score_history.json"
-)
-$volumeOptional = @(
-    "FULL_REPORT.md",
+    "btc_pulse_score_history.json",
     "btc_pulse_meta_bundle.json",
     "LESSONS.md",
     "STATE.md",
@@ -77,6 +79,7 @@ $volumeOptional = @(
     "validation_full.txt",
     "validation_light.txt"
 )
+$volumeOptional = @()
 foreach ($f in $volumeRequired) {
     $isBinary = $f -eq "report.docx"
     Copy-RemoteFile "$remoteDir/$f" (Join-Path $Dest $f) -Binary:$isBinary
@@ -92,11 +95,10 @@ foreach ($f in $volumeOptional) {
     }
 }
 
-if (-not (Test-Path (Join-Path $Dest "btc_pulse_status.json"))) {
-    Write-Error "Pull failed: btc_pulse_status.json missing"
-}
-if (-not (Test-Path (Join-Path $Dest "report.docx"))) {
-    Write-Error "Pull failed: report.docx missing"
+foreach ($f in @("btc_pulse_status.json", "report.docx", "FULL_REPORT.md")) {
+    if (-not (Test-Path (Join-Path $Dest $f))) {
+        Write-Error "Pull failed: $f missing (engine must generate real full report on VPS)"
+    }
 }
 Write-Host "Pulled artifacts -> $Dest"
 
