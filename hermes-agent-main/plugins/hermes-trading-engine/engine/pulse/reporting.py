@@ -425,6 +425,16 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
         "down_stack": light.get("down_stack"),
     }
 
+    # WS1 — unified signal-edge verdicts (FOLLOW/FADE/OBSERVE) measured on real settled outcomes.
+    # OBSERVE-ONLY: surfaces which signals are reliably right (follow) vs reliably wrong (fade,
+    # trade the inverse) vs inconclusive. Never places/sizes/bypasses a trade.
+    from engine.pulse.signal_edge import build_signal_edge_summary, extract_signal_edge_entries
+    external_signals["signal_edge"] = build_signal_edge_summary(
+        extract_signal_edge_entries(
+            tradingview=tv, grok_decider=gd,
+            grok_signal_intel=light.get("grok_signal_intel"),
+            cex_lead_edge=light.get("cex_lead_edge")))
+
     return {
         "schema": "btc_pulse_report_sections/1.0",
         "trading_performance": trading_performance,
