@@ -274,6 +274,7 @@ class PulseConfig:
     dependency_arb_execute_enabled: bool = False  # paper execute validated violations (WS4)
     dependency_arb_max_usd: float = 50.0
     dependency_arb_epsilon: float = 0.02        # LCMM violation floor (separate from dutch-book eps)
+    dependency_arb_conjunction_enabled: bool = False  # WS3-B: TRUE multi-child Fréchet floor (default OFF)
     dependency_arb_kelly_enabled: bool = False  # edge-proportional sizing (Lever C; default OFF)
     dependency_arb_kelly_fraction: float = 0.25  # quarter-Kelly cap multiplier
     dependency_arb_kelly_depth_frac: float = 0.5  # cap size at this frac of ask depth
@@ -698,6 +699,9 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             dependency_arb_max_usd=_envf("PULSE_DEPENDENCY_ARB_MAX_USD", 50.0),
             dependency_arb_epsilon=_envf("PULSE_DEPENDENCY_ARB_EPSILON", 0.02),
+            dependency_arb_conjunction_enabled=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_CONJUNCTION", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
             dependency_arb_kelly_enabled=str(
                 os.getenv("PULSE_DEPENDENCY_ARB_KELLY", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -4461,7 +4465,8 @@ class PulseEngine:
         eps = max(0.01, float(self.cfg.dependency_arb_epsilon))
         violations = scan_windows(
             open_w, epsilon=eps, max_usd=self.cfg.dependency_arb_max_usd,
-            vwap_enrich=True)
+            vwap_enrich=True,
+            conjunction_enabled=bool(self.cfg.dependency_arb_conjunction_enabled))
 
         bregman_by_parent: dict[str, dict] = {}
         if self.cfg.bregman_projection_enabled:
