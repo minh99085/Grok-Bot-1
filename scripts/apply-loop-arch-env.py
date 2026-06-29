@@ -76,7 +76,7 @@ UPDATES = {
     "PULSE_TV_DOWN_BIAS_EXPLORE_RATE": "0",
     # Baseline quant path: allowlist was deadlocking (no proven bucket + 0% explore).
     "PULSE_DIRECTIONAL_REQUIRE_WINNING": "0",
-    "PULSE_DIRECTIONAL_EXPLORE_RATE": "0",
+    "PULSE_DIRECTIONAL_EXPLORE_RATE": "0.05",   # WS2: cold-start DOWN exploration (was 0, deadlocked)
     "PULSE_MIN_EDGE": "0.008",
     "PULSE_BASIS_BUFFER": "0.008",
     # Bot1 strategy: sweet-spot only (0.47-0.55) — tighter than Bot2 for A/B test.
@@ -154,8 +154,15 @@ UPDATES = {
     "PULSE_DEPENDENCY_ARB_EPSILON": "0.02",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
-    # Arb-first perfect-WR lab: directional paused; only risk-free + dependency arb trade.
-    "PULSE_DIRECTIONAL_ENABLED": "0",
+    # WS2 (operator-authorized 2026-06-29): un-pause directional for DOWN-side data COLLECTION only.
+    # Stays DOWN-only (UP hard-blocked) + a small cold-start exploration carve-out so proven-winning
+    # buckets can actually be discovered instead of deadlocking at zero trades. Capped by
+    # PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC. PAPER ONLY.
+    "PULSE_DIRECTIONAL_ENABLED": "1",
+    # Verifier: stop starving cold-start exploration with "when unsure, veto" — exploration trades
+    # get a shrunk approve instead of a hard veto so settled data can be collected and the veto's
+    # own quality graded. Capability gated; full effect once wired into the follow path.
+    "PULSE_VERIFIER_EXPLORE_APPROVE": "1",
     "PULSE_ARB_MAX_USD": "300",
     "PULSE_PRIMARY_EDGE_SOURCE": "arbitrage",
     "PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC": "0.10",

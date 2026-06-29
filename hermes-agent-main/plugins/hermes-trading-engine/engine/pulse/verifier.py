@@ -66,11 +66,21 @@ class ClaudeVerifier:
     """Independent maker-checker. ``request`` a verdict per decision, read it fail-open at act time."""
 
     def __init__(self, *, verify_fn=None, budget: Optional[GrokBudget] = None, enabled: bool = True,
-                 fail_open: bool = True, max_pending: int = 200, max_results: int = 5000):
+                 fail_open: bool = True, max_pending: int = 200, max_results: int = 5000,
+                 explore_approve: bool = False, explore_max_size_fraction: float = 0.5,
+                 veto_quality_min_n: int = 20):
         self._fn = verify_fn if verify_fn is not None else make_verifier_fn()
         self._budget = budget
         self.enabled = bool(enabled)
         self.fail_open = bool(fail_open)
+        # WS2: cold-start exploration must not be starved by a skeptical "when unsure, veto" model.
+        # When explore_approve is on, an exploration-tagged proposal that the verifier VETOED is
+        # downgraded to a SHRUNK approve (never an enlargement) so the bot can collect the settled
+        # data needed to PROVE/disprove a bucket. Default OFF -> behavior unchanged.
+        self.explore_approve = bool(explore_approve)
+        self.explore_max_size_fraction = float(explore_max_size_fraction)
+        self.veto_quality_min_n = int(veto_quality_min_n)
+        self.exploration_approvals = 0
         self._lock = threading.Lock()
         self._queue: deque = deque(maxlen=int(max_pending))
         self._results: dict = {}
@@ -105,10 +115,24 @@ class ClaudeVerifier:
             r = self._results.get(decision_id)
             return dict(r) if r else None
 
-    def verdict_or_failopen(self, decision_id: str) -> dict:
-        """Verdict to act on: the stored verdict, else fail-open APPROVE (or VETO if fail-closed)."""
+    def verdict_or_failopen(self, decision_id: str, *, exploration: bool = False) -> dict:
+        """Verdict to act on: the stored verdict, else fail-open APPROVE (or VETO if fail-closed).
+
+        WS2: when ``exploration`` is True and ``explore_approve`` is on, a VETO is converted to a
+        SHRUNK approve (capped at ``explore_max_size_fraction``) so cold-start data collection isn't
+        starved — the verifier can still SHRINK, never enlarge. Recorded as an exploration approval.
+        """
         v = self.get(decision_id)
         if v is not None:
+            if (exploration and self.explore_approve and not v.get("approve")):
+                with self._lock:
+                    self.exploration_approvals += 1
+                return {"approve": True,
+                        "max_size_fraction": min(float(v.get("max_size_fraction", 1.0) or 1.0),
+                                                 self.explore_max_size_fraction),
+                        "confidence": float(v.get("confidence", 0.0) or 0.0),
+                        "reason": "explore_approve_over_veto(%s)" % (v.get("reason") or "veto"),
+                        "exploration": True, "verifier_vetoed": True}
             return v
         return {"approve": bool(self.fail_open), "max_size_fraction": 1.0, "confidence": 0.0,
                 "reason": ("fail_open_no_verdict" if self.fail_open else "fail_closed_no_verdict"),
@@ -191,7 +215,24 @@ class ClaudeVerifier:
             def wr(b):
                 return {"n": b["n"], "win_rate": (round(b["wins"] / b["n"], 4) if b["n"] else None),
                         "pnl_usd": round(b["pnl"], 4)}
+            # WS2 veto quality: is the verifier's skepticism EARNING its keep? A veto is "good" only
+            # if the trades it killed would have LOST (counterfactual win-rate < breakeven). If the
+            # vetoed setups would have WON / made money, the verifier is destroying edge.
+            vwh = self.vetoed_would_have
+            veto_quality = {"verdict": "insufficient_evidence", "n": vwh["n"],
+                            "vetoed_would_have_win_rate": (round(vwh["wins"] / vwh["n"], 4)
+                                                           if vwh["n"] else None),
+                            "vetoed_would_have_pnl_usd": round(vwh["pnl"], 4),
+                            "min_samples": self.veto_quality_min_n}
+            if vwh["n"] >= self.veto_quality_min_n:
+                if vwh["pnl"] > 0 or (vwh["wins"] / vwh["n"]) > 0.5:
+                    veto_quality["verdict"] = "vetoes_costing_edge"   # killed profitable trades
+                else:
+                    veto_quality["verdict"] = "good_vetoes"           # killed losers (helping)
             return {"enabled": self.enabled, "model": "claude", "maker_checker": True,
+                    "veto_quality": veto_quality,
+                    "explore_approve": self.explore_approve,
+                    "exploration_approvals": self.exploration_approvals,
                     "can_force_trade": False, "fail_open": self.fail_open, "paper_only": True,
                     "requested": self.requested, "verified": self.verified,
                     "approvals": self.approvals, "vetoes": self.vetoes, "errors": self.errors,
@@ -207,6 +248,7 @@ class ClaudeVerifier:
         with self._lock:
             return {"requested": self.requested, "verified": self.verified,
                     "approvals": self.approvals, "vetoes": self.vetoes, "errors": self.errors,
+                    "exploration_approvals": self.exploration_approvals,
                     "skipped_budget": self.skipped_budget, "latency_sum": round(self.latency_sum, 3),
                     "approved_settled": dict(self.approved_settled),
                     "vetoed_would_have": dict(self.vetoed_would_have),
@@ -221,6 +263,7 @@ class ClaudeVerifier:
             self.approvals = int(data.get("approvals", 0) or 0)
             self.vetoes = int(data.get("vetoes", 0) or 0)
             self.errors = int(data.get("errors", 0) or 0)
+            self.exploration_approvals = int(data.get("exploration_approvals", 0) or 0)
             self.skipped_budget = int(data.get("skipped_budget", 0) or 0)
             self.latency_sum = float(data.get("latency_sum", 0.0) or 0.0)
             for k, src in (("approved_settled", "approved_settled"),
