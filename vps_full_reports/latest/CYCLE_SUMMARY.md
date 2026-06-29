@@ -1,6 +1,6 @@
 # Bot cycle summary (plain English)
 
-_Updated: 2026-06-29 11:34 UTC_
+_Updated: 2026-06-29 11:43 UTC_
 
 ## Last cycle
 
@@ -38,8 +38,8 @@ _Updated: 2026-06-29 11:34 UTC_
 
 ### TradingView (INDEX:BTCUSD)
 
-- Alerts received: **969**
-- 5-chart trend: **single_tf** (1/3 fresh)
+- Alerts received: **978**
+- 5-chart trend: **confirmed_down_3tf** (3/3 fresh)
 
 ## Quick verdict
 

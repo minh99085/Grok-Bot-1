@@ -1,18 +1,18 @@
 # BTC Pulse — Technical Report (plain English)
 
-_Updated: 2026-06-29 11:34:41 UTC_
+_Updated: 2026-06-29 11:43:52 UTC_
 
 ## At a glance
 
 | | |
 |---|---|
-| **Overall grade** | **C** (70.0/100) — Below target — review config and performance. |
+| **Overall grade** | **C** (70.2/100) — Below target — review config and performance. |
 | Trading performance | C (70.0/100) |
 | Engine operation | C (71.5/100) |
 | External signals | F (49.4/100) |
-| Technical runtime | B (81.3/100) |
+| Technical runtime | B (82.0/100) |
 | Settled trades | 0 |
-| Engine ticks | 1215 |
+| Engine ticks | 5 |
 
 ## Executive summary
 
@@ -34,8 +34,8 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Infrastructure & data health
 
-- **Oracle (RTDS):** Connected; fresh (age 0.78s).
-- **TradingView:** 969 valid alerts of 1188 received; observe-only=yes; MTF verdict: `single_tf`.
+- **Oracle (RTDS):** Connected; fresh (age 1.06s).
+- **TradingView:** 978 valid alerts of 1197 received; observe-only=yes; MTF verdict: `confirmed_down_mtf`.
 - **Entry config:** tick 15.0s, max price 0.55, min edge 0.008, min R:R 0.5, 15m TTC band [450.0, 720.0]s, green path=on.
 
 ## What's dragging the score
@@ -43,7 +43,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 - **Trading performance** (C): weakest — Trade sample size (0), Win rate (50), Profit factor (50).
 - **Operation** (C): weakest — Grok/decider errors (0), Promotion readiness (40), Candidate pipeline activity (70).
 - **External signals** (F): weakest — TV-aligned win edge (30), Grok direction accuracy (32), CEX lead proven (40).
-- **Technical runtime**: watch — Gate funnel balance (53), Design manifest match (70).
+- **Technical runtime**: watch — Gate funnel balance (54), Design manifest match (70).
 
 ## Where candidates get blocked (top gates)
 
@@ -53,7 +53,8 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 ## Why recent windows didn't trade
 
-- `directional_disabled`: 12 recent eval(s)
+- `directional_disabled`: 8 recent eval(s)
+- `no_price_or_vol`: 2 recent eval(s)
 
 ## Design vs deployed (drift)
 
@@ -65,6 +66,7 @@ The bot is **running safely with solid technical runtime**, but **trading result
 
 **Good:**
 - Oracle and RTDS feeds are healthy and fresh.
+- TradingView webhooks are flowing; observe-only lock is respected.
 - Ledger and lifecycle accounting reconcile cleanly.
 - Paper portfolio is up 10.4% overall (arb helping).
 
