@@ -141,11 +141,16 @@ UPDATES = {
     # 5m brain (scan/LCMM child) + 15m hands (directional + parent). No 5m directional.
     "PULSE_SERIES_SLUGS": "btc-up-or-down-5m,btc-up-or-down-15m",
     "PULSE_DIRECTIONAL_SERIES_SLUGS": "btc-up-or-down-15m",
-    # Epsilon = fees + slippage (~0.01); 0.015 captures 0.02-0.04 near-miss band (deep-scan 2026-06-29).
+    # Cost-aware capture (deep-scan 2026-06-29, operator-authorized): the flat 0.015 epsilon
+    # double-counted execution risk and never fired on tight BTC books. We now make the
+    # PER-OPPORTUNITY non-atomic sim the real cost filter (market impact + 50bps leg-2 slippage +
+    # pre-commit-breach check) and drop epsilon to a small fees-only floor. Net effect: capture the
+    # near-miss band ONLY when the trade still books guaranteed >0 after realistic sequential fills;
+    # reject sub-cost ones. Every booked arb stays guaranteed >= $0 by construction.
     "PULSE_ARB_FEES": "0.0",
-    "PULSE_ARB_EPSILON": "0.015",
-    "PULSE_ARB_EPSILON_5M": "0.015",
-    "PULSE_ARB_EPSILON_15M": "0.015",
+    "PULSE_ARB_EPSILON": "0.003",
+    "PULSE_ARB_EPSILON_5M": "0.003",
+    "PULSE_ARB_EPSILON_15M": "0.003",
     "PULSE_DEPENDENCY_ARB_EPSILON": "0.02",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
@@ -184,7 +189,9 @@ UPDATES = {
     "PULSE_LEARNING_BENCH_MARGIN": "0.0",
     "PULSE_ARB_GLOBAL_MAX_OPEN_USD": "600",
     # Step 2 guard: leg risk is the only way arb can lose — atomic complete-set only.
-    "PULSE_ARB_NONATOMIC_ENABLED": "0",
+    # Operator-authorized 2026-06-29: re-enabled so the sim is the PER-OPPORTUNITY cost filter that
+    # makes the low epsilon above safe (rejects any near-miss that would lose after leg-2 slippage).
+    "PULSE_ARB_NONATOMIC_ENABLED": "1",
     "PULSE_ARB_NONATOMIC_SLIPPAGE_BPS": "50",
     "PULSE_SIZING_PROMOTION_GATED": "1",
     "HERMES_SIZING_ENABLED": "0",
