@@ -80,7 +80,7 @@ UPDATES = {
     "PULSE_MIN_EDGE": "0.008",
     "PULSE_BASIS_BUFFER": "0.008",
     # Bot1 strategy: sweet-spot only (0.47-0.55) — tighter than Bot2 for A/B test.
-    "PULSE_MIN_ENTRY_PRICE": "0.47",
+    "PULSE_MIN_ENTRY_PRICE": "0.45",
     "PULSE_MIN_REWARD_RISK": "0.50",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
     "PULSE_GROK_UP_MIN_P_WIN": "0.58",
@@ -151,7 +151,7 @@ UPDATES = {
     "PULSE_ARB_EPSILON": "0.003",
     "PULSE_ARB_EPSILON_5M": "0.003",
     "PULSE_ARB_EPSILON_15M": "0.003",
-    "PULSE_DEPENDENCY_ARB_EPSILON": "0.02",
+    "PULSE_DEPENDENCY_ARB_EPSILON": "0.03",
     # WS3-B: TRUE multi-child conjunction constraint (Fréchet floor). Default OFF — flip to "1" to
     # START MEASURING it (outcome-settled) before trusting; the bound rarely binds but is real.
     "PULSE_DEPENDENCY_ARB_CONJUNCTION": "0",

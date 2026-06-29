@@ -23,6 +23,28 @@ ENTRY_PRICE_BUCKETS: list[tuple[float, float, str]] = [
 ]
 
 DEP_ARB_KELLY_MIN_SAMPLES = 20
+DEP_ARB_BUCKET_HALT_MIN_N = 5
+DEP_ARB_BUCKET_HALT_MAX_PF = 1.0
+
+
+def dep_arb_bucket_bleeding(
+    entry_vwap: float,
+    calibration: Optional[DependencyArbCalibration],
+    *,
+    min_n: int = DEP_ARB_BUCKET_HALT_MIN_N,
+    max_pf: float = DEP_ARB_BUCKET_HALT_MAX_PF,
+) -> "tuple[bool, str]":
+    """True when outcome-settled calibration shows a bucket is net-losing (PF < max_pf)."""
+    if calibration is None:
+        return False, ""
+    stats = calibration.bucket_stats(entry_vwap)
+    n = int(stats.get("n") or 0)
+    pf = stats.get("profit_factor")
+    if n < int(min_n) or pf is None:
+        return False, ""
+    if float(pf) < float(max_pf):
+        return True, "bucket_bleeding_%s" % stats.get("bucket")
+    return False, ""
 
 
 def entry_price_bucket(entry_vwap: float) -> str:

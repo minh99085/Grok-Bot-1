@@ -141,6 +141,8 @@ class PulseConfig:
     # FOLLOW trades wait for the actual Claude verdict (fail-CLOSED on pending) so the maker-checker
     # genuinely gates them rather than fail-opening before the async worker finishes.
     verifier_follow_require_verdict: bool = True
+    verifier_explore_approve: bool = False   # WS2: shrunk approve over veto for exploration trades
+    verifier_explore_max_size_fraction: float = 0.5
     verifier_max_calls_per_hour: int = 120
     research_loop_enabled: bool = False
     research_interval_s: float = 1800.0      # idle FLOOR; the loop is mainly EVENT-triggered
@@ -526,6 +528,10 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             verifier_follow_require_verdict=str(os.getenv("PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            verifier_explore_approve=str(os.getenv("PULSE_VERIFIER_EXPLORE_APPROVE", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            verifier_explore_max_size_fraction=_envf(
+                "PULSE_VERIFIER_EXPLORE_MAX_SIZE_FRACTION", 0.5),
             verifier_max_calls_per_hour=int(_envf("PULSE_VERIFIER_MAX_CALLS_PER_HOUR", 120)),
             research_loop_enabled=str(os.getenv("PULSE_RESEARCH_LOOP_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
@@ -1332,8 +1338,13 @@ class PulseEngine:
                                         "research": self.cfg.research_max_calls_per_hour})
                 if self.cfg.verifier_enabled:
                     from engine.pulse.verifier import ClaudeVerifier
-                    self.verifier = ClaudeVerifier(budget=self.claude_budget, enabled=True,
-                                                   fail_open=self.cfg.verifier_fail_open).start()
+                    self.verifier = ClaudeVerifier(
+                        budget=self.claude_budget, enabled=True,
+                        fail_open=self.cfg.verifier_fail_open,
+                        explore_approve=self.cfg.verifier_explore_approve,
+                        explore_max_size_fraction=float(
+                            self.cfg.verifier_explore_max_size_fraction),
+                    ).start()
                 if self.cfg.research_loop_enabled:
                     from engine.pulse.research_loop import ResearchLoop
                     self.research_loop = ResearchLoop(
@@ -1952,6 +1963,8 @@ class PulseEngine:
             grok_dec = None
             grok_size_frac = 1.0
             grok_verdict = None
+            allowlist_exploration = False
+            context_explored = False
             if self.grok_decider is not None:
                 self.loops.beat("signal_generation", now)
                 _grok_bundle = self._grok_decision_bundle(mc, dr, w, fair_used, ttc, tv_feature)
@@ -2191,7 +2204,9 @@ class PulseEngine:
                         grok_verdict = self.verifier.get(mc.decision_id) or {
                             "approve": False, "pending": True, "reason": "verifier_pending"}
                     else:
-                        grok_verdict = self.verifier.verdict_or_failopen(mc.decision_id)
+                        grok_verdict = self.verifier.verdict_or_failopen(
+                            mc.decision_id,
+                            exploration=(entry_mode == "grok_explore"))
                     if not grok_verdict.get("approve"):
                         vr = "verifier_pending" if grok_verdict.get("pending") else "verifier_veto"
                         if not grok_verdict.get("pending"):
@@ -2574,6 +2589,7 @@ class PulseEngine:
                               stage="directional_allowlist")
                     continue
                 self._allowlist_explored += 1   # kept active for learning (exploration trade)
+                allowlist_exploration = True
             gate_res = self.selectivity_gate.evaluate(sel_tags, self.selectivity_evidence)
             dr.selectivity = {"decision": gate_res["decision"], "reasons": gate_res["reasons"],
                               "bad_buckets": gate_res["bad_buckets"]}
@@ -2632,7 +2648,18 @@ class PulseEngine:
             # the CALIBRATED probability so the floor reflects realized edge, not the model's claim.
             # Mispricing-follow buys the CEX-indicated (often underdog) side; waive the favourite
             # floor the same way as Wilson-proven cex-lead drive entries.
-            _waive_underdog_floor = cex_lead_active or entry_mode == "mispricing_follow"
+            _exploration_trade = (
+                allowlist_exploration
+                or context_explored
+                or gate_decision in ("explored", "grok_follow_explored", "cex_lead_explored")
+                or str(gate_decision).endswith("_explored")
+                or entry_mode == "grok_explore"
+            )
+            _waive_underdog_floor = (
+                cex_lead_active
+                or entry_mode == "mispricing_follow"
+                or (_exploration_trade and float(self.cfg.directional_explore_rate) > 0)
+            )
             ex = evaluate_execution(
                 side=d.side, book=book, outcome_prob=gate_outcome_prob,
                 size_usd=round(self.cfg.size_usd * grok_size_frac, 2),
@@ -4536,6 +4563,16 @@ class PulseEngine:
                 walk_forward_passed=bool(wf.get("passed")),
                 s_open=snap,
             )
+            if trade:
+                from engine.pulse.dependency_arb import dep_arb_bucket_bleeding
+                halted, halt_reason = dep_arb_bucket_bleeding(
+                    float(trade.get("entry_vwap") or 0),
+                    self.dep_arb_ledger.calibration,
+                )
+                if halted:
+                    self.dep_arb_ledger.rejected_by_reason[halt_reason] = (
+                        int(self.dep_arb_ledger.rejected_by_reason.get(halt_reason, 0) or 0) + 1)
+                    continue
             if trade and self.dep_arb_ledger.book(trade, now=now):
                 self.loops.beat("dependency_arb", now)
 
