@@ -30,11 +30,14 @@ def _dep_arb_row(pos: dict) -> dict:
     won = None
     if status == "settled" and realized is not None:
         pnl = float(realized)
-        won = pnl > 0
+        if pos.get("won") is not None:
+            won = bool(pos.get("won"))
+        else:
+            won = pnl > 0
     window = str(pos.get("parent_window_key") or pos.get("window_key") or "")
     return {
         "trade_type": "dep_arb",
-        "side": "ARB",
+        "side": "P-UP",
         "entry_price": pos.get("entry_vwap"),
         "entry_ts": pos.get("entry_ts"),
         "close_ts": pos.get("close_ts"),
@@ -42,12 +45,66 @@ def _dep_arb_row(pos: dict) -> dict:
         "status": status,
         "pnl_usd": pnl,
         "won": won,
+        "outcome_settled": bool(pos.get("outcome_settled")),
+        "heuristic_profit_usd": pos.get("heuristic_profit_usd"),
         "research": {
             "series_label": "dep-arb",
-            "market_series": f"nested {window}" if window else "nested",
+            "market_series": f"parent {window}" if window else "nested",
         },
         "expected_profit_usd": expected,
+        "cost_usd": pos.get("cost_usd"),
+        "shares": pos.get("shares"),
     }
+
+
+def dep_arb_stats(ledger: dict | None) -> dict[str, Any]:
+    """Aggregate dep-arb position counts: total, wins, losses, open."""
+    empty = {"total": 0, "wins": 0, "losses": 0, "open": 0, "settled": 0}
+    if not ledger:
+        return empty
+    acct = ledger.get("accounting_state") or {}
+    dep = acct.get("dep_arb_ledger") or {}
+    positions = [p for p in (dep.get("positions") or {}).values() if isinstance(p, dict)]
+    wins = losses = open_n = settled = 0
+    for pos in positions:
+        status = str(pos.get("status") or "")
+        if status == "open":
+            open_n += 1
+        if status != "settled":
+            continue
+        settled += 1
+        if pos.get("won") is not None:
+            if bool(pos.get("won")):
+                wins += 1
+            else:
+                losses += 1
+        elif pos.get("realized_profit_usd") is not None:
+            pnl = float(pos.get("realized_profit_usd"))
+            if pnl > 0:
+                wins += 1
+            elif pnl < 0:
+                losses += 1
+    return {
+        "total": len(positions),
+        "wins": wins,
+        "losses": losses,
+        "open": open_n,
+        "settled": settled,
+    }
+
+
+def dep_arb_trades_for_dashboard(ledger: dict | None, *, limit: int = 20) -> list[dict]:
+    """Dependency-arb positions only, newest first."""
+    if not ledger:
+        return []
+    acct = ledger.get("accounting_state") or {}
+    dep = acct.get("dep_arb_ledger") or {}
+    rows: list[dict] = []
+    for pos in (dep.get("positions") or {}).values():
+        if isinstance(pos, dict):
+            rows.append(_dep_arb_row(pos))
+    rows.sort(key=_sort_ts, reverse=True)
+    return rows[: max(1, int(limit))]
 
 
 def _dutch_arb_row(pos: dict) -> dict:

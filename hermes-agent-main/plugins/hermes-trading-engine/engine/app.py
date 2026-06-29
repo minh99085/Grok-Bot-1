@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.middleware.gzip import GZipMiddleware
 
 from engine.pulse.dashboard import DASHBOARD_HTML as _DASHBOARD_HTML
-from engine.pulse.dashboard_trades import recent_trades_for_dashboard
+from engine.pulse.dashboard_trades import dep_arb_stats, dep_arb_trades_for_dashboard
 
 logger = logging.getLogger("hte.app")
 
@@ -75,11 +75,11 @@ def btc_pulse_ledger(summary: bool = Query(False)) -> dict:
     if not led:
         return {"available": False, "reason": "no pulse ledger yet."}
     if summary:
-        positions = recent_trades_for_dashboard(led, limit=20)
+        positions = dep_arb_trades_for_dashboard(led, limit=20)
         return {
             "available": True,
             "paper_only": led.get("paper_only", True),
-            "stats": led.get("stats") or {},
+            "dep_arb_stats": dep_arb_stats(led),
             "positions": positions,
         }
     return {"available": True, **led}

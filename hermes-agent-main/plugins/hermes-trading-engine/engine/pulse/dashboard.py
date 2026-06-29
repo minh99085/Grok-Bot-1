@@ -1,4 +1,4 @@
-"""Read-only BTC pulse dashboard HTML (embedded SPA) — one-screen traffic lights."""
+"""Read-only dep-arb dashboard HTML (Bot 1 arb-first workspace)."""
 
 DASHBOARD_HTML = r"""<!doctype html>
 <html lang="en">
@@ -6,7 +6,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <meta name="color-scheme" content="dark"/>
-<title>BTC Pulse · Master view</title>
+<title>BTC Pulse · Dep-Arb</title>
 <style>
 :root{
   --bg:#12141a;--bg2:#181b24;--card:#1c2029;--line:#2a3040;
@@ -22,30 +22,34 @@ header{
 }
 h1{font-size:34px;font-weight:600;margin:0}
 .tag{font-size:22px;padding:5px 14px;border-radius:16px;background:var(--card);color:var(--text2)}
-.tag.live{color:var(--green)}
-.tag.warn{color:var(--yellow)}
-.tag.off{color:var(--red)}
+.tag.live{color:var(--green)}.tag.warn{color:var(--yellow)}.tag.off{color:var(--red)}
 main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
 .cap-bar{
   display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 20px;
   background:linear-gradient(135deg,var(--card) 0%,#222836 100%);
   border:1px solid var(--line);border-radius:var(--radius);
-  padding:16px 20px;margin-bottom:14px;
+  padding:16px 20px;margin-bottom:12px;
 }
-.cap-main{font-size:40px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;color:var(--text)}
+.cap-main{font-size:40px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .cap-label{font-size:22px;color:var(--text2);margin-top:2px}
 .cap-sub{font-size:22px;color:var(--text2)}
 .cap-sub b{color:var(--text);font-weight:600}
 .cap-sub .up{color:var(--green)}.cap-sub .dn{color:var(--red)}
+.stats-bar{
+  display:flex;flex-wrap:wrap;gap:12px 24px;margin-bottom:12px;
+  padding:12px 18px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+}
+.stat{font-size:24px;color:var(--text2)}
+.stat b{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums}
+.stat .w{color:var(--green)}.stat .l{color:var(--red)}.stat .o{color:var(--yellow)}
 .verdict{
   display:flex;align-items:center;gap:8px;font-size:26px;font-weight:600;
   padding:10px 16px;border-radius:var(--radius);background:var(--card);border:1px solid var(--line);
   margin-bottom:12px;
 }
 .content-split{
-  display:grid;grid-template-columns:1fr 396px;gap:12px 24px;align-items:start;
+  display:grid;grid-template-columns:1fr 420px;gap:12px 24px;align-items:start;
 }
-.trades-col{padding:0;margin:0}
 .trades-head{
   margin:0 0 8px;font-size:20px;font-weight:600;color:var(--accent);
   text-transform:uppercase;letter-spacing:.06em;
@@ -57,8 +61,7 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
 }
 .trade-line:last-child{border-bottom:0}
 .trade-info{min-width:0;color:var(--text2)}
-.trade-side{font-weight:600;color:var(--text)}
-.trade-side.up{color:var(--green)}.trade-side.down{color:var(--red)}.trade-side.arb{color:var(--accent)}
+.trade-side{font-weight:600;color:var(--accent)}
 .trade-tag{font-size:19px;color:var(--text2);margin-left:4px}
 .trade-tag.win{color:var(--green)}.trade-tag.loss{color:var(--red)}.trade-tag.open{color:var(--yellow)}
 .trade-pnl{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;font-size:22px}
@@ -71,7 +74,6 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
   display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;
   padding:8px 12px;background:var(--card);border:1px solid var(--line);border-radius:8px;
 }
-.tl-row:hover{border-color:#3d4658}
 .tl-dot{width:17px;height:17px;border-radius:50%;flex-shrink:0}
 .tl-green{background:var(--green);box-shadow:0 0 6px rgba(74,222,128,.55)}
 .tl-yellow{background:var(--yellow);box-shadow:0 0 6px rgba(250,204,21,.45)}
@@ -87,34 +89,29 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
   text-transform:uppercase;letter-spacing:.06em;padding:8px 2px 4px;
 }
 .foot{margin-top:14px;color:var(--text2);font-size:20px}
-@media(max-width:960px){
-  .content-split{grid-template-columns:1fr}
-  .trades-col{margin-top:4px}
-}
-@media(max-width:420px){
-  .tl-grid{grid-template-columns:1fr}
-  .cap-main{font-size:34px}
-}
+@media(max-width:960px){.content-split{grid-template-columns:1fr}}
+@media(max-width:420px){.tl-grid{grid-template-columns:1fr}.cap-main{font-size:34px}}
 </style>
 </head>
 <body>
 <header>
-  <h1>BTC Pulse</h1>
+  <h1>Dep-Arb Lab</h1>
   <span class="tag">Paper only</span>
   <span class="tag" id="health">Loading…</span>
   <span class="tag" id="meta" style="color:var(--text3)"></span>
 </header>
 <main>
   <div class="cap-bar" id="cap-bar"></div>
+  <div class="stats-bar" id="stats-bar"></div>
   <div class="verdict" id="verdict"></div>
   <div class="content-split">
     <div class="tl-grid" id="tl-grid"></div>
     <aside class="trades-col">
-      <div class="trades-head">Last 20 trades</div>
+      <div class="trades-head">Last 20 dep-arb trades</div>
       <div id="trades-list"></div>
     </aside>
   </div>
-  <div class="foot">Refreshes every 1 min · read-only · total capital = start + arb + dep-arb + directional</div>
+  <div class="foot">Refreshes every 1 min · dependency-arb lane only · outcome-settled P&L</div>
 </main>
 <script>
 const $=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild};
@@ -123,6 +120,13 @@ const usd=(x)=>x==null?'—':'$'+Number(x).toFixed(2);
 const pct=(x)=>x==null?'—':(x>=0?'+':'')+Number(x).toFixed(2)+'%';
 const dot=(c)=>'<span class="tl-dot tl-'+c+'"></span>';
 
+function fmtTsShort(ts){
+  if(ts==null)return '—';
+  try{
+    const d=new Date(Number(ts)*1000);
+    return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  }catch(e){return '—';}
+}
 function fmtAge(sec){
   if(sec==null)return '—';
   const s=Math.round(Number(sec));
@@ -130,13 +134,6 @@ function fmtAge(sec){
   if(s<60)return s+'s';
   if(s<3600)return Math.floor(s/60)+'m';
   return Math.floor(s/3600)+'h';
-}
-function fmtTsShort(ts){
-  if(ts==null)return '—';
-  try{
-    const d=new Date(Number(ts)*1000);
-    return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-  }catch(e){return '—';}
 }
 function tradeOutcome(x){
   const st=(x.status||'').toLowerCase();
@@ -149,210 +146,109 @@ function renderTrades(listEl,positions){
   listEl.innerHTML='';
   const pos=(positions||[]).slice(0,20);
   if(!pos.length){
-    listEl.innerHTML='<div class="trades-empty">No trades yet.</div>';
+    listEl.innerHTML='<div class="trades-empty">No dep-arb trades yet.</div>';
     return;
   }
   pos.forEach(x=>{
     const r=x.research||{};
-    const side=(x.side||'—').toUpperCase();
-    const sideCls=side==='UP'?'up':(side==='DOWN'?'down':(side==='ARB'?'arb':''));
-    const series=r.series_label||r.market_series||'—';
-    const seriesDetail=r.market_series&&r.market_series!==series?' · '+r.market_series:'';
     const oc=tradeOutcome(x);
+    const settled=x.outcome_settled?' · settled':'';
     const row=$('<div class="trade-line"></div>');
     row.innerHTML=
-      '<div class="trade-info"><span class="trade-side '+sideCls+'">'+side+'</span>'
+      '<div class="trade-info"><span class="trade-side">'+(x.side||'P-UP')+'</span>'
       +'<span class="trade-tag '+oc.cls+'">'+oc.label+'</span>'
-      +' <span class="trade-tag">'+series+seriesDetail+' @'+f(x.entry_price,2)+'</span>'
+      +'<span class="trade-tag"> '+r.market_series+' @'+f(x.entry_price,3)+settled+'</span>'
       +'<br><span class="trade-tag">'+fmtTsShort(x.entry_ts)+'</span></div>'
       +'<div class="trade-pnl '+oc.pnlCls+'">'+oc.pnl+'</div>';
     listEl.appendChild(row);
   });
 }
-
-function addRow(rows,name,val,hint,light){
-  rows.push({name,val,hint,light});
+function renderStats(el,st){
+  st=st||{};
+  el.innerHTML=
+    '<span class="stat">Total <b>'+f(st.total,0)+'</b></span>'
+    +'<span class="stat">Wins <b class="w">'+f(st.wins,0)+'</b></span>'
+    +'<span class="stat">Losses <b class="l">'+f(st.losses,0)+'</b></span>'
+    +'<span class="stat">Open <b class="o">'+f(st.open,0)+'</b></span>'
+    +'<span class="stat">Settled <b>'+f(st.settled,0)+'</b></span>';
 }
-function addSection(rows,title){
-  rows.push({section:title});
-}
+function addRow(rows,name,val,hint,light){rows.push({name,val,hint,light});}
+function addSection(rows,title){rows.push({section:title});}
 
 function buildRows(s){
   const rows=[];
-  const cap=s.capital||{};
-  const L=s.ledger||{};
-  const price=s.price||{};
-  const tv=s.tradingview||{};
-  const gd=s.grok_decider||{};
-  const gsi=s.grok_signal_intel||{};
-  const ver=s.verifier||{};
-  const rl=s.research_loop||{};
-  const les=s.lessons||{};
-  const arb=s.arbitrage||{};
   const dep=s.dependency_arbitrage||{};
-  const dr=s.directional_risk||{};
-  const cb=(gd.circuit_breaker||{});
+  const cal=dep.dependency_arb_calibration||{};
+  const gate=dep.kelly_gate||{};
+  const book=dep.booking||{};
   const loops=s.loops||{};
-  const loopMap=(loops.loops||{});
-  const lc=s.decision_lifecycle||{};
-  const rbs=lc.rejected_by_stage||{};
-  const topGate=Object.entries(rbs).sort((a,b)=>b[1]-a[1])[0];
-  const mtf=tv.tradingview_mtf_confirmation||{};
-  const tfs=tv.tradingview_mtf_timeframes||mtf.mtf_timeframes||['2','3','4'];
-  const mtfN=mtf.mtf_count||tfs.length;
-  const mtfVerdict=mtf['confirm_'+mtfN+'tf']||mtf.confirm_mtf||mtf.confirm_3tf||'none';
-  const fresh=mtf.trend_fresh_count||0;
-  const rej=tv.tradingview_reject_reasons||{};
-  const wh=tv.webhook||{};
-  const aA=gsi.analyst_A||{};
-  const pB=gsi.predictor_B||{};
-  const reconciled=(s.reconciliation||{}).global_reconciled!==false;
   const statusAge=(Date.now()/1000)-(Number(s.ts)||0);
-  const stalled=(loops.stalled||[]).length;
-  const totalOnHand=cap.total_on_hand_usd;
-  const totalPnl=cap.total_realized_pnl_usd;
-  const wr=(L.win_rate||0)*100;
+  const pnl=dep.realized_profit_usd||0;
+  const wr=dep.settled>0?((gate.warm_buckets||0)>0?'see calibration':'—'):'—';
 
-  addSection(rows,'Money');
-  addRow(rows,'Total on-hand',usd(totalOnHand),
-    'Start '+usd(cap.starting_capital_usd)+' + all realized PnL',
-    totalOnHand>=500?'green':(totalOnHand>=480?'yellow':'red'));
-  addRow(rows,'Total PnL',pct(cap.total_return_pct)+' ('+usd(totalPnl)+')',
-    'Arb '+usd(cap.arb_realized_pnl_usd)+' · Dep '+usd(cap.dependency_arb_realized_pnl_usd)+' · Dir '+usd(cap.realized_pnl_usd),
-    totalPnl>0?'green':(totalPnl>=0?'yellow':'red'));
-  const dirOn=dr.directional_enabled!==false;
-  if(dirOn){
-    addRow(rows,'Win rate',f(wr,1)+'% · '+f(L.trades,0)+' trades',
-      f(L.settled,0)+' settled · open '+f(L.open_positions,0),
-      wr>=55?'green':(wr>=45?'yellow':'red'));
+  addSection(rows,'Dep-Arb P&L');
+  addRow(rows,'Realized P&L',usd(pnl),
+    'Outcome-settled when resolver available',
+    pnl>0?'green':(pnl>=0?'yellow':'red'));
+  addRow(rows,'Theoretical booked',usd(book.theoretical_settled_usd),
+    'Capture ratio '+f(book.capture_ratio,2),
+    (book.capture_ratio||0)>=0.4?'green':'yellow');
+  addRow(rows,'Heuristic compare',book.settled_n?f(book.settled_n,0)+' settled':'—',
+    'Legacy capped heuristic kept for comparison',
+    'yellow');
+
+  addSection(rows,'Activity');
+  addRow(rows,'Executed',f(dep.executed,0)+' · settled '+f(dep.settled,0),
+    'open '+f(dep.open,0)+' · scans '+f(dep.scans,0),
+    (dep.executed||0)>0?'green':'yellow');
+  addRow(rows,'Violations',f(dep.violations_detected,0)+' detected',
+    f(dep.actionable_detected,0)+' actionable · '+f(dep.mid_only_violations,0)+' mid-only',
+    (dep.actionable_detected||0)>0?'green':'yellow');
+  addRow(rows,'Mode',dep.mode||'—',
+    dep.enabled?'execute ON':'log only',
+    dep.enabled?'green':'yellow');
+
+  addSection(rows,'Kelly & calibration');
+  addRow(rows,'Kelly active',dep.kelly_active?'YES':'no',
+    'enabled '+!!gate.kelly_enabled+' · fraction '+f(gate.kelly_fraction,2),
+    dep.kelly_active?'green':'yellow');
+  addRow(rows,'Walk-forward',gate.walk_forward_passed?'passed':'blocked',
+    (gate.walk_forward||{}).holdout?'holdout n='+f(((gate.walk_forward||{}).holdout||{}).n,0):'warming up',
+    gate.walk_forward_passed?'green':'yellow');
+  const buckets=cal.buckets||{};
+  const bucketKeys=Object.keys(buckets);
+  if(bucketKeys.length){
+    bucketKeys.slice(0,4).forEach(k=>{
+      const b=buckets[k]||{};
+      addRow(rows,'Bucket '+k,f(b.win_rate!=null?(b.win_rate*100).toFixed(1)+'%':'—'),
+        'n='+f(b.n,0)+' · PF '+f(b.profit_factor,2)+' · avg '+usd(b.avg_pnl),
+        (b.profit_factor||0)>=1?'green':'yellow');
+    });
   }else{
-    addRow(rows,'Directional','PAUSED (arb-first lab)',
-      'TV signals observe-only — not trade authority',
+    addRow(rows,'Calibration','no buckets yet',
+      'min samples '+f(cal.min_samples_kelly,0)+' for Kelly',
       'yellow');
-    addRow(rows,'Dep-arb activity',f(dep.executed,0)+' exec · '+f(dep.settled,0)+' settled',
-      'open '+f(dep.open||dep.open_positions,0)+' · PnL '+usd(dep.realized_profit_usd),
-      (dep.executed||0)>0?'green':'yellow');
   }
-  addRow(rows,'Open exposure',usd(dr.open_exposure_usd||cap.open_exposure_usd)+' / '+usd(dr.bankroll_cap_usd||cap.directional_bankroll_cap_usd||50),
-    'Directional cap remaining',
-    (dr.open_exposure_usd||cap.open_exposure_usd||0)<=(dr.bankroll_cap_usd||50)?'green':'red');
 
   addSection(rows,'Engine');
   addRow(rows,'Bot alive','ticks '+f(s.ticks,0)+' · age '+fmtAge(statusAge),
-    s.paper_only&&!s.live_trading_enabled?'paper mode OK':'CHECK LIVE FLAG',
+    s.paper_only?'paper mode OK':'CHECK MODE',
     statusAge<45&&s.ticks>5?'green':(statusAge<120?'yellow':'red'));
-  addRow(rows,'Loops',(loops.all_live?'all live':'check')+' · '+f(loops.count,0)+' registered',
-    stalled?stalled+' stalled':'0 stalled',
-    stalled===0&&loops.all_live!==false?'green':(stalled?'red':'yellow'));
-  addRow(rows,'Ledger reconcile',reconciled?'yes':'NO',
-    'Books must match',
-    reconciled?'green':'red');
-  addRow(rows,'Circuit breaker',cb.tripped?(cb.reason||'TRIPPED'):'OK',
-    'Daily loss used '+usd(cb.daily_follow_loss_usd)+' / cap '+usd(cb.daily_loss_cap_usd),
-    cb.tripped?'red':'green');
-
-  addSection(rows,'Price feed');
-  const pAge=price.age_s;
-  addRow(rows,'BTC price',usd(price.last_price)+' · '+f(pAge,1)+'s old',
-    (price.source||'—')+' · polls '+f(price.polls,0),
-    pAge!=null&&pAge<15?'green':(pAge!=null&&pAge<60?'yellow':'red'));
-  addRow(rows,'Vol sampler',price.sampler_running?'running':'off',
-    'samples '+f(price.vol_samples,0),
-    price.sampler_running?'green':'red');
-
-  addSection(rows,'TradingView');
-  addRow(rows,'Webhook',wh.listening?'listening':'DOWN',
-    f(tv.tradingview_alerts_valid,0)+' valid / '+f(tv.tradingview_alerts_received,0)+' recv',
-    wh.listening?'green':'red');
-  const tvRej=tv.tradingview_alerts_rejected||0;
-  const rejBits=Object.entries(rej).filter(([,n])=>Number(n)>0)
-    .sort((a,b)=>b[1]-a[1]).map(([k,v])=>k+' '+v);
-  const rejHint=tvRej===0?'no rejects':(rejBits.length?rejBits.join(' · '):'legacy scrubbed');
-  addRow(rows,'TV rejects',f(tvRej,0),
-    rejHint,
-    tvRej===0?'green':(tvRej<=3?'yellow':'red'));
-  tfs.forEach(tf=>{
-    const dir=mtf['tf_'+tf+'m_dir'];
-    const age=mtf['tf_'+tf+'m_age_s'];
-    const win=mtf['tf_'+tf+'m_window_s'];
-    const stale=dir==null&&age!=null&&win!=null&&age>win;
-    addRow(rows,tf+'m chart',(dir||'—')+(age!=null?' · '+f(age,0)+'s':''),
-      stale?'stale — refire alert':'fresh',
-      dir&&!stale?'green':(dir?'yellow':'red'));
-  });
-  addRow(rows,'MTF verdict',mtfVerdict,
-    fresh+'/'+mtfN+' fresh · observe-only trade gate',
-    mtfVerdict.includes('confirmed')&&fresh>=2?'green':(fresh>=1?'yellow':'red'));
-
-  addSection(rows,'Grok AI');
-  const gdReq=gd.requested||0;
-  const gdErr=gd.errors||0;
-  const gdErrRate=gdReq>0?gdErr/gdReq:0;
-  const gdOk=gd.enabled&&gd.mode==='shadow'&&!cb.tripped;
-  addRow(rows,'Decider C',(gd.mode||'off')+' · '+f(gd.decided,0)+' decided',
-    'abstains '+f(gd.abstains,0)+' · err '+f(gdErr,0)+' ('+f(gdErrRate*100,1)+'%)',
-    !gd.enabled||cb.tripped?'red':(gdOk&&gdErrRate<0.08?'green':(gdOk?'yellow':'yellow')));
-  addRow(rows,'Predictor B',pB.enabled?'on':'off',
-    f(pB.predicted,0)+' predicted · acc '+f((pB.accuracy||0)*100,1)+'%',
-    pB.enabled&&(pB.errors||0)<5?'green':'yellow');
-  addRow(rows,'Analyst A',aA.enabled?'on':'off',
-    f(aA.calls,0)+' calls · errors '+f(aA.errors,0),
-    aA.enabled&&aA.errors===0?'green':'yellow');
-  const bud=(gsi.budget||{});
-  addRow(rows,'Grok budget','$'+f(bud.daily_usd_cap||50,0)+'/day',
-    'spent '+usd(bud.spent_usd_today||0),
-    'green');
-
-  addSection(rows,'Claude');
-  addRow(rows,'Verifier',ver.enabled?'on':'off',
-    f(ver.verified,0)+' verified · '+f(ver.vetoes,0)+' vetoes · err '+f(ver.errors,0),
-    ver.enabled&&ver.errors===0?'green':(ver.errors>0?'red':'yellow'));
-  addRow(rows,'Research loop',rl.enabled?'on':'off',
-    rl.enabled?(f(rl.calls,0)+' calls · auto-apply '+(rl.auto_apply?'yes':'no')):'disabled in env',
-    rl.enabled?'green':'yellow');
-  addRow(rows,'Lessons',f(les.active||0,0)+' active / '+f(les.count||0,0)+' total',
-    'compounding memory',
-    (les.count||0)>0?'green':'yellow');
-
-  addSection(rows,'Gates & readiness');
-  addRow(rows,'Top gate block',topGate?topGate[0]+' ('+topGate[1]+')':'none',
-    'expected heavy blocks in learning mode',
-    'yellow');
-  const readiness=(s.readiness||{});
-  addRow(rows,'Promotion',readiness.status||'—',
-    readiness.reason||'directional not ready until ladder green',
-    readiness.status==='ready'?'green':'yellow');
-  addRow(rows,'Live trading',s.live_trading_enabled?'ON':'OFF',
-    'must stay OFF in learning',
-    s.live_trading_enabled?'red':'green');
-
-  addSection(rows,'Arbitrage');
-  if(!dirOn){
-    addRow(rows,'Simplex arb','waiting for book edge',
-      f(arb.arb_scan_count||0,0)+' scans · need up+down < 0.985 after fees',
-      'yellow');
-  }
-  addRow(rows,'Dutch-book arb',f(arb.arb_scan_count||arb.executed,0)+' scans · '+f(arb.executed,0)+' exec',
-    'PnL '+usd(arb.realized_profit_usd),
-    (arb.realized_profit_usd||0)>0?'green':'yellow');
-  addRow(rows,'Dependency arb',f(dep.scans,0)+' scans · '+f(dep.executed,0)+' exec',
-    'PnL '+usd(dep.realized_profit_usd),
-    (dep.realized_profit_usd||0)>0?'green':'yellow');
+  addRow(rows,'Loops',loops.all_live?'all live':'check',
+    f((loops.stalled||[]).length,0)+' stalled',
+    (loops.stalled||[]).length===0?'green':'red');
 
   return rows;
 }
 
 function overallLight(s,rows){
-  const reds=rows.filter(r=>!r.section&&r.light==='red').length;
-  const cap=s.capital||{};
+  const dep=s.dependency_arbitrage||{};
+  const pnl=dep.realized_profit_usd||0;
   if(!s.available)return {light:'red',text:'NO DATA'};
   if(s.live_trading_enabled)return {light:'red',text:'LIVE TRADING ON'};
-  if((s.reconciliation||{}).global_reconciled===false)return {light:'red',text:'LEDGER BROKEN'};
-  if(((s.grok_decider||{}).circuit_breaker||{}).tripped)return {light:'red',text:'BREAKER TRIPPED'};
-  if(reds>=3)return {light:'red',text:'MULTIPLE ISSUES ('+reds+')'};
-  if(reds>=1)return {light:'yellow',text:'WATCH — '+reds+' issue(s)'};
-  if((cap.total_on_hand_usd||0)>500)return {light:'green',text:'HEALTHY · PROFITABLE'};
-  return {light:'green',text:'HEALTHY'};
+  if((dep.executed||0)===0)return {light:'yellow',text:'WAITING FOR DEP-ARB TRADES'};
+  if(pnl<0)return {light:'yellow',text:'DEP-ARB NEGATIVE P&L'};
+  return {light:'green',text:'DEP-ARB ACTIVE'};
 }
 
 function renderRows(grid,rows){
@@ -397,22 +293,22 @@ async function tick(){
   }catch(e){setTag('health',e&&e.name==='AbortError'?'Timed out':'Unreachable','off');return;}
   if(!s.available){setTag('health','No data','off');return;}
   setTag('health','Live','live');
-  const cfg=s.config||{};
   document.getElementById('meta').textContent=
-    'tick '+f(cfg.tick_seconds,0)+'s · '+new Date().toLocaleTimeString();
+    'tick · '+new Date().toLocaleTimeString();
 
-  const cap=s.capital||{};
-  const total=cap.total_on_hand_usd;
-  const pnl=cap.total_realized_pnl_usd;
+  const dep=s.dependency_arbitrage||{};
+  const pnl=dep.realized_profit_usd||0;
   const pnlCls=pnl>=0?'up':'dn';
+  const st=(l&&l.dep_arb_stats)||{};
   document.getElementById('cap-bar').innerHTML=
-    '<div><div class="cap-main">'+usd(total)+'</div>'
-    +'<div class="cap-label">total on-hand paper capital</div></div>'
-    +'<div class="cap-sub">Started <b>'+usd(cap.starting_capital_usd)+'</b></div>'
-    +'<div class="cap-sub">PnL <b class="'+pnlCls+'">'+(pnl>=0?'+':'')+usd(Math.abs(pnl))+'</b> ('+pct(cap.total_return_pct)+')</div>'
-    +'<div class="cap-sub">Arb <b class="up">'+usd(cap.arb_realized_pnl_usd)+'</b></div>'
-    +'<div class="cap-sub">Dep-arb <b class="up">'+usd(cap.dependency_arb_realized_pnl_usd)+'</b></div>'
-    +'<div class="cap-sub">Directional <b>'+usd(cap.realized_pnl_usd)+'</b></div>';
+    '<div><div class="cap-main '+pnlCls+'">'+usd(pnl)+'</div>'
+    +'<div class="cap-label">dep-arb realized P&L (outcome-settled)</div></div>'
+    +'<div class="cap-sub">Executed <b>'+f(dep.executed,0)+'</b></div>'
+    +'<div class="cap-sub">Settled <b>'+f(dep.settled,0)+'</b></div>'
+    +'<div class="cap-sub">Open <b class="o">'+f(dep.open,0)+'</b></div>'
+    +'<div class="cap-sub">Kelly <b>'+(dep.kelly_active?'active':'off')+'</b></div>';
+
+  renderStats(document.getElementById('stats-bar'),st);
 
   const rows=buildRows(s);
   const ov=overallLight(s,rows);
