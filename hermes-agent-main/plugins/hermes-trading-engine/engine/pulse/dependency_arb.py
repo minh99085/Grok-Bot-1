@@ -220,8 +220,19 @@ def group_nested_windows(windows: list) -> list:
 
 
 def validate_violation(v: DependencyViolation) -> tuple[bool, str]:
-    """Deterministic validator — LLM proposals must pass this before any trade."""
-    if v.constraint_type != "nested_implication":
+    """Deterministic validator — LLM proposals must pass this before any trade.
+
+    Two constraint types:
+      * ``nested_implication`` (legacy heuristic): a single 5m child up-mid above the 15m up-mid.
+        This is NOT a hard logical constraint (P(up_15m) >= P(up over one arbitrary 5m sub-window)
+        does not hold in general); it is a mean-reversion heuristic, now outcome-settled so its real
+        edge is measured rather than assumed.
+      * ``conjunction_implication`` (WS3-B, economically correct): "all nested 5m children UP =>
+        15m UP" is a TRUE logical implication, so P(up_15m) >= P(all children up) >= Fréchet lower
+        bound sum(child_up) - (n-1). When the 15m up-mid is below that bound, parent-UP is provably
+        underpriced. The bound rarely binds, but when it does the floor is real.
+    """
+    if v.constraint_type not in ("nested_implication", "conjunction_implication"):
         return False, "unsupported_constraint"
     if v.violation_magnitude <= 0:
         return False, "no_magnitude"
@@ -229,6 +240,12 @@ def validate_violation(v: DependencyViolation) -> tuple[bool, str]:
         return False, "missing_window_keys"
     if v.parent_up_mid is None or not v.child_up_mids:
         return False, "missing_prices"
+    if v.constraint_type == "conjunction_implication":
+        # the implied_bound IS the Fréchet conjunction floor; it must exceed the parent up-mid.
+        floor = v.implied_bound
+        if floor is None or float(floor) <= float(v.parent_up_mid):
+            return False, "conjunction_bound_not_violated"
+        return True, "ok"
     if float(v.child_up_mids[0]) <= float(v.parent_up_mid):
         return False, "implication_not_violated"
     return True, "ok"
@@ -300,19 +317,80 @@ def scan_nested_implication(
     return out
 
 
+def scan_conjunction_implication(
+    parent,
+    children: list,
+    *,
+    epsilon: float = 0.02,
+    max_usd: float = 50.0,
+    vwap_enrich: bool = True,
+    min_children: int = 2,
+) -> list:
+    """WS3-B: TRUE multi-child constraint. 'all nested 5m children UP => 15m UP', so
+    P(up_15m) >= Fréchet floor = sum(child_up_mids) - (n-1). Buy parent-UP when the 15m up-mid is
+    below that floor by epsilon. Unlike the single-child heuristic this is a real logical bound."""
+    out = []
+    p_mid = _up_mid(parent)
+    if p_mid is None:
+        return out
+    child_mids = []
+    child_keys = []
+    for c in children:
+        cm = _up_mid(c)
+        if cm is None:
+            continue
+        child_mids.append(round(float(cm), 6))
+        child_keys.append(str(c.event_id))
+    n = len(child_mids)
+    if n < int(min_children):
+        return out
+    floor = sum(child_mids) - (n - 1)              # Fréchet lower bound on P(all children up)
+    mag = float(floor) - float(p_mid)
+    if mag <= float(epsilon):
+        return out
+    v = DependencyViolation(
+        constraint_type="conjunction_implication",
+        parent_window_key=str(parent.event_id),
+        child_window_keys=child_keys,
+        description=("15m up-mid below the conjunction floor sum(child_up)-(n-1): all %d nested 5m "
+                     "children UP logically implies 15m UP, so P(up_15m) cannot be below it" % n),
+        parent_up_mid=round(float(p_mid), 6),
+        child_up_mids=child_mids,
+        implied_bound=round(float(floor), 6),
+        violation_magnitude=round(mag, 6),
+        actionable=False,
+        reason="detected",
+    )
+    if vwap_enrich:
+        # reuse the parent-UP VWAP executability check (same buy-parent-up leg as nested).
+        v = enrich_vwap_actionable(v, parent, children[0] if children else parent,
+                                   max_usd=max_usd, epsilon=epsilon)
+    out.append(v)
+    return out
+
+
 def scan_windows(
     windows: list,
     *,
     epsilon: float = 0.02,
     max_usd: float = 50.0,
     vwap_enrich: bool = True,
+    conjunction_enabled: bool = False,
 ) -> list:
-    """Run all LCMM dependency scans with optional VWAP executability enrichment."""
+    """Run all LCMM dependency scans with optional VWAP executability enrichment.
+
+    ``conjunction_enabled`` (WS3-B, default OFF) adds the economically-correct multi-child
+    conjunction constraint alongside the legacy single-child heuristic.
+    """
     violations = []
     for parent, children in group_nested_windows(windows):
         violations.extend(scan_nested_implication(
             parent, children, epsilon=epsilon, max_usd=max_usd,
             vwap_enrich=vwap_enrich))
+        if conjunction_enabled:
+            violations.extend(scan_conjunction_implication(
+                parent, children, epsilon=epsilon, max_usd=max_usd,
+                vwap_enrich=vwap_enrich))
     return violations
 
 
