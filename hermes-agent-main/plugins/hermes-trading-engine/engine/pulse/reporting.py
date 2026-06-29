@@ -312,9 +312,16 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
 
     dep = light.get("dependency_arbitrage") or {}
     dep_summary = dep_arb_summary_from_ledger(ledger)
-    dir_pnl = None
-    if cap.get("total_realized_pnl_usd") is not None and cap.get("arb_realized_pnl_usd") is not None:
-        dir_pnl = round(float(cap["total_realized_pnl_usd"]) - float(cap["arb_realized_pnl_usd"]), 4)
+    dep_pnl = float(cap.get("dependency_arb_realized_pnl_usd")
+                     or dep.get("realized_profit_usd") or 0)
+    dir_pnl = cap.get("realized_pnl_usd")
+    if dir_pnl is None and cap.get("total_realized_pnl_usd") is not None:
+        dir_pnl = round(
+            float(cap["total_realized_pnl_usd"])
+            - float(cap.get("arb_realized_pnl_usd") or 0)
+            - dep_pnl,
+            4,
+        )
 
     by_series = light.get("by_market_series") or {}
     trading_performance = {
@@ -324,7 +331,9 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
             "starting_capital_usd": cap.get("starting_capital_usd"),
             "return_pct": cap.get("return_pct"),
             "total_return_pct": cap.get("total_return_pct"),
-            "directional_realized_pnl_usd": cap.get("realized_pnl_usd") or dir_pnl,
+            "directional_realized_pnl_usd": (
+                cap.get("realized_pnl_usd")
+                if cap.get("realized_pnl_usd") is not None else dir_pnl),
             "arb_realized_pnl_usd": cap.get("arb_realized_pnl_usd") or arb.get("realized_profit_usd"),
             "dependency_arb_realized_pnl_usd": (
                 cap.get("dependency_arb_realized_pnl_usd")
