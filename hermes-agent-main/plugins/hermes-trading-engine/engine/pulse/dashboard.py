@@ -58,7 +58,7 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
 .trade-line:last-child{border-bottom:0}
 .trade-info{min-width:0;color:var(--text2)}
 .trade-side{font-weight:600;color:var(--text)}
-.trade-side.up{color:var(--green)}.trade-side.down{color:var(--red)}
+.trade-side.up{color:var(--green)}.trade-side.down{color:var(--red)}.trade-side.arb{color:var(--accent)}
 .trade-tag{font-size:19px;color:var(--text2);margin-left:4px}
 .trade-tag.win{color:var(--green)}.trade-tag.loss{color:var(--red)}.trade-tag.open{color:var(--yellow)}
 .trade-pnl{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;font-size:22px}
@@ -155,14 +155,15 @@ function renderTrades(listEl,positions){
   pos.forEach(x=>{
     const r=x.research||{};
     const side=(x.side||'—').toUpperCase();
-    const sideCls=side==='UP'?'up':(side==='DOWN'?'down':'');
+    const sideCls=side==='UP'?'up':(side==='DOWN'?'down':(side==='ARB'?'arb':''));
     const series=r.series_label||r.market_series||'—';
+    const seriesDetail=r.market_series&&r.market_series!==series?' · '+r.market_series:'';
     const oc=tradeOutcome(x);
     const row=$('<div class="trade-line"></div>');
     row.innerHTML=
       '<div class="trade-info"><span class="trade-side '+sideCls+'">'+side+'</span>'
       +'<span class="trade-tag '+oc.cls+'">'+oc.label+'</span>'
-      +' <span class="trade-tag">'+series+' @'+f(x.entry_price,2)+'</span>'
+      +' <span class="trade-tag">'+series+seriesDetail+' @'+f(x.entry_price,2)+'</span>'
       +'<br><span class="trade-tag">'+fmtTsShort(x.entry_ts)+'</span></div>'
       +'<div class="trade-pnl '+oc.pnlCls+'">'+oc.pnl+'</div>';
     listEl.appendChild(row);
