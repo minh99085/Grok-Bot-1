@@ -1,6 +1,6 @@
 //@version=6
 // =====================================================================================
-// Hermes BTC Pulse Composite v7 IndexTrend — tuned for Grok-Bot-2 / Hermes pulse engine
+// Hermes BTC Pulse Composite v7 IndexTrend — tuned for Grok-Bot-1 / Hermes pulse engine
 // =====================================================================================
 // INDEX:BTCUSD only — aligns with Chainlink BTC/USD settlement (no Binance BTCUSDT).
 //   TradingView BTC Index = avg(BITSTAMP, COINBASE, BITFINEX, KRAKEN) spot USD.

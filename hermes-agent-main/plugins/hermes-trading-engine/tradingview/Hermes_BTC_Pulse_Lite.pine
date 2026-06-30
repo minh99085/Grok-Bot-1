@@ -1,6 +1,6 @@
 //@version=6
 // =====================================================================================
-// Hermes BTC Pulse Lite — simple 3-chart MTF (observe-only webhooks; Bot1 + Bot2 dual-feed)
+// Hermes BTC Pulse Lite — simple 3-chart MTF (observe-only webhooks; standalone Bot 1)
 // =====================================================================================
 // Symbol: BTCUSD (or INDEX:BTCUSD — bot normalizes both to BTCUSD).
 //
@@ -24,7 +24,7 @@ indicator("Hermes BTC Pulse Lite", overlay=true)
 // --- Hermes webhook (paste secret from VPS .env TRADINGVIEW_WEBHOOK_SECRET) ---
 secretInput = input.string("", "Hermes webhook secret")
 botName = input.string("hermes", "Bot name")
-eventIdSuffix = input.string("bot1", "Event ID suffix (bot1/bot2 — required for dual-bot alerts)")
+eventIdSuffix = input.string("bot1", "Event ID suffix (keeps event_id unique; default bot1)")
 indicatorName = input.string("Hermes BTC Pulse Lite", "Indicator name")
 liteVersion = "lite-2"
 

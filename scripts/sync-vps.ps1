@@ -20,7 +20,7 @@ if (-not (Test-Path (Join-Path $RepoRoot ".git"))) {
     Write-Error "Not a git repo: $RepoRoot"
 }
 if ($RepoRoot -notmatch "Grok-Bot-1") {
-    Write-Error "SAFETY: sync-vps.ps1 in Grok-Bot-1 only. Bot2 uses Grok-Bot-1 repo."
+    Write-Error "SAFETY: sync-vps.ps1 deploys Grok-Bot-1 (standalone) only."
 }
 Set-Location $RepoRoot
 

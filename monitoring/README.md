@@ -17,7 +17,7 @@ VPS also keeps `btc_pulse_score_history.json` (graded scores over time).
 ## Record a snapshot
 
 ```powershell
-cd C:\Users\tieut\Grok-Bot-2
+cd C:\Users\tieut\Grok-Bot-1
 
 # After babysit pull (automatic if using pull script)
 python scripts\pulse-babysit\record-timeline.py --from-latest
@@ -46,9 +46,9 @@ python scripts\pulse-babysit\timeline-view.py --json
 
 ## Automated (already set up)
 
-- **GrokBot2-PulseBabysit** scheduled task → hourly `/pulse-babysit cycle`
+- **GrokBot1-PulseBabysit** scheduled task → hourly `/pulse-babysit cycle`
 - Each cycle: pull artifacts → evaluate → `record-timeline` (via pull script)
-- **Dashboard**: http://45.32.224.147/dashboard (live only, no history)
+- **Dashboard**: http://45.32.227.242/dashboard (live only, no history)
 
 ## What each timeline row captures
 

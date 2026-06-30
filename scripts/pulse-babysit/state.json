@@ -2,7 +2,6 @@
   "goals": {
     "bot_id": "bot1",
     "strategy_id": "arb_first_perfect_wr_v1",
-    "paired_bot": "bot2",
     "mode": "real_money_discipline",
     "win_rate_target": 1.0,
     "win_rate_target_deferred": false,

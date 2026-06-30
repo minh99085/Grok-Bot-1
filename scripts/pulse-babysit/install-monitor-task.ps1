@@ -1,7 +1,7 @@
 # Lightweight hourly snapshot: pull artifacts + append monitoring/timeline.jsonl
 param(
     [int]$IntervalMinutes = 60,
-    [string]$TaskName = "GrokBot2-PulseMonitor",
+    [string]$TaskName = "GrokBot1-PulseMonitor",
     [string]$RepoRoot = "C:\Users\tieut\Grok-Bot-1"
 )
 
