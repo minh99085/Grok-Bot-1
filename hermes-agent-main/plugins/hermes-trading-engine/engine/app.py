@@ -75,7 +75,7 @@ def btc_pulse_ledger(summary: bool = Query(False)) -> dict:
     if not led:
         return {"available": False, "reason": "no pulse ledger yet."}
     if summary:
-        positions = dep_arb_trades_for_dashboard(led, limit=20)
+        positions = dep_arb_trades_for_dashboard(led, limit=50)
         return {
             "available": True,
             "paper_only": led.get("paper_only", True),
