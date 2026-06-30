@@ -76,8 +76,16 @@ def main() -> int:
     if gd.get("mode") == "follow" and gd.get("affects_trading"):
         issues.append(_issue("grok_follow_on", "P0", "Grok is driving trades",
                              "set PULSE_GROK_DECIDER_MODE=shadow"))
-    if int(gd.get("errors") or 0) >= 10:
-        issues.append(_issue("grok_errors", "P1", f"errors={gd.get('errors')}", "check XAI_API_KEY"))
+    # Observe-only decider: only flag a HIGH failure RATE (systemic API/key/timeout failure), not the
+    # lifetime cumulative counter (which a long-lived bot always exceeds via transient timeouts).
+    _gd_req = int(gd.get("requested") or 0)
+    _gd_err = int(gd.get("errors") or 0)
+    if _gd_req >= 20 and _gd_err >= _gd_req * 0.5:
+        issues.append(_issue(
+            "grok_errors", "P1",
+            f"errors={_gd_err}/{_gd_req} ({_gd_err / _gd_req:.0%}) avg_latency_s={gd.get('avg_latency_s')}",
+            "high grok failure rate — check XAI_API_KEY, raise PULSE_GROK_DECIDER_TIMEOUT_S, "
+            "or set PULSE_GROK_DECIDER_USE_SEARCH=0"))
 
     ver = status.get("verifier") or {}
     if not record("verifier_enabled", ver.get("enabled") is True, f"enabled={ver.get('enabled')}"):
@@ -158,11 +166,14 @@ def main() -> int:
     rejects = dep.get("rejected_by_reason") or {}
     skew_rejects = sum(int(v) for k, v in rejects.items() if str(k).startswith("clock_skew_"))
     actionable = int(dep.get("actionable_detected") or 0)
-    if actionable > 20 and skew_rejects >= actionable * 0.8:
+    # Only flag starvation when the clock-skew filter is ACTUALLY enabled. When it is disabled the
+    # clock_skew_* counts are stale lifetime totals from before it was turned off — they no longer
+    # reject anything, so they must not raise a P0 (the old hint even said to disable an off filter).
+    if exp.get("clock_skew_enabled") and actionable > 20 and skew_rejects >= actionable * 0.8:
         issues.append(_issue(
             "clock_skew_starving_fills", "P0",
             "actionable=%s clock_skew_rejects=%s rejects=%s" % (actionable, skew_rejects, rejects),
-            "set PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED=0 or lower MIN_PARENT_BOOK_AGE_S"))
+            "lower PULSE_DEPENDENCY_ARB_MIN_PARENT_BOOK_AGE_S or set PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED=0"))
     elif actionable == 0 and int(dep.get("violations_detected") or 0) > 100:
         top = sorted(rejects.items(), key=lambda x: -int(x[1] or 0))[:3]
         issues.append(_issue(
