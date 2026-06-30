@@ -37,7 +37,11 @@ UPDATES = {
     "GROK_ANALYST_MAX_CALLS_PER_HOUR": "4",
     "PULSE_GROK_DECIDER_MAX_CALLS_PER_HOUR": "120",
     "PULSE_GROK_DECIDER_TIMEOUT_S": "18",
-    "PULSE_GROK_DECIDER_USE_SEARCH": "1",
+    # Deep-tier web/X search OFF (operator-authorized 2026-06-30): it drove the decider's timeout
+    # errors (~29% of calls, 8.3s avg latency vs 18s cap) and burned API budget for no proven gain
+    # (the decider is shadow/observe-only and was anti-predictive). Tiered compute keeps the decider
+    # running for grading; it just stops issuing slow live-search calls.
+    "PULSE_GROK_DECIDER_USE_SEARCH": "0",
     "PULSE_GROK_NEWS_REFRESH_S": "300",
     "PULSE_GROK_TIERED_COMPUTE": "1",
     "PULSE_GROK_TIER_FULL_DIVERGENCE_MIN": "0.025",

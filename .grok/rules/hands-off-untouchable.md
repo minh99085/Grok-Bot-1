@@ -21,7 +21,9 @@ Read before any env, gate, deploy, or babysit cycle that alters behavior.
 - `PULSE_GROK_DECIDER_MAX_CALLS_PER_HOUR=120`
 - `GROK_PREDICTOR_MAX_CALLS_PER_HOUR=60`
 - `GROK_ANALYST_MAX_CALLS_PER_HOUR=4`
-- `PULSE_GROK_DECIDER_USE_SEARCH=1` (deep tier only — code default)
+- `PULSE_GROK_DECIDER_USE_SEARCH=0` (operator-authorized 2026-06-30: deep-tier live search was
+  driving ~29% decider timeout errors + API spend for no proven gain; decider stays observe-only
+  via tiered compute, just without slow web-search calls)
 - `PULSE_RESEARCH_LOOP_ENABLED=1` with `PULSE_RESEARCH_AUTO_APPLY=1` (evidence-backed adjust ON)
 - `PULSE_LEARNING_ENABLED=1` (blend when model beats market)
 - `PULSE_VERIFIER_ENABLED=1`
