@@ -3088,6 +3088,18 @@ class PulseEngine:
         return passes_walk_forward(
             positions, min_holdout_n=5, min_holdout_pf=1.0)
 
+    def _dep_arb_intel_report(self) -> dict:
+        from engine.pulse.dep_arb_intel import build_dep_arb_intel_report
+        return build_dep_arb_intel_report(
+            grok_dependency=getattr(self, "_grok_dependency_report", None),
+            grok_screener=(self.grok_dep_screener.report()
+                           if self.grok_dep_screener is not None else None),
+            grok_convergence=(self.grok_dep_convergence.report()
+                              if self.grok_dep_convergence is not None else None),
+            claude_verifier=(self.dep_arb_verifier.report()
+                             if self.dep_arb_verifier is not None else None),
+        )
+
     def _dep_arb_report(self) -> dict:
         if self.dep_arb_ledger is None:
             return {}
@@ -4329,17 +4341,7 @@ class PulseEngine:
         report["arb_graph"] = getattr(self, "_arb_graph_report", None) or {"nodes": 0}
         report["grok_dependency"] = getattr(self, "_grok_dependency_report", None) or {
             "dependency_proposals": 0}
-        report["dep_arb_intel"] = {
-            "grok_dependency": report.get("grok_dependency") or {},
-            "grok_convergence": (self.grok_dep_convergence.report()
-                                 if self.grok_dep_convergence is not None
-                                 else {"enabled": False}),
-            "claude_verifier": (self.dep_arb_verifier.report()
-                                if self.dep_arb_verifier is not None
-                                else {"enabled": False}),
-            "note": ("Grok proposes constraints + 60s convergence prior (observe); "
-                     "Claude vets conjunction binds only."),
-        }
+        report["dep_arb_intel"] = self._dep_arb_intel_report()
         report["bregman_projection"] = getattr(self, "_bregman_projection_report", None) or {
             "enabled": False}
         report["clob_feed"] = (
@@ -5397,6 +5399,7 @@ class PulseEngine:
             "arb_graph": getattr(self, "_arb_graph_report", None) or {"nodes": 0},
             "grok_dependency": getattr(self, "_grok_dependency_report", None) or {
                 "dependency_proposals": 0},
+            "dep_arb_intel": self._dep_arb_intel_report(),
             "bregman_projection": getattr(self, "_bregman_projection_report", None) or {
                 "enabled": False},
             "clob_feed": (

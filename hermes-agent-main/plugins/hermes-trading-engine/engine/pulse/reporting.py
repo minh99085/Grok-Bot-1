@@ -278,6 +278,30 @@ def _append_dep_arb_report_section(
         h3("Bregman projection (Layer 2)")
         kv(breg, ["enabled", "trade_authority", "note"])
 
+    intel = light.get("dep_arb_intel") or {}
+    if intel:
+        h3("Dep-arb intel (Grok + Claude)")
+        kv(intel, ["enabled", "observe_only", "headline"])
+        vq = intel.get("veto_quality") or {}
+        if vq:
+            kv(vq, ["verdict", "n", "min_samples", "vetoed_would_have_win_rate",
+                    "vetoed_would_have_pnl_usd", "ready_for_gate", "headline"])
+        gp = intel.get("grok_proposals") or {}
+        if gp:
+            kv(gp, ["enabled", "proposals_in", "validated", "rejected", "headline"])
+            sc = gp.get("screener") or {}
+            if sc:
+                kv(sc, ["calls", "proposals_cached", "age_s", "errors"])
+        gc = intel.get("grok_convergence") or {}
+        if gc.get("enabled"):
+            kv(gc, ["accuracy_60s", "scored_60s", "requested", "predicted", "headline"])
+        cv = intel.get("claude_verifier") or {}
+        if cv.get("enabled"):
+            kv(cv, ["verified", "approvals", "vetoes", "avg_latency_s", "headline"])
+            ast = cv.get("approved_settled") or {}
+            if ast:
+                kv(ast, ["n", "win_rate", "pnl_usd"])
+
     trades = (dep_summary or {}).get("recent_trades") or []
     h3("Last 20 dep-arb trades (P-UP)")
     if trades:
@@ -351,6 +375,7 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
         "ledger": led,
         "arbitrage": arb,
         "dependency_arbitrage": dep,
+        "dep_arb_intel": light.get("dep_arb_intel") or {},
         "dep_arb_summary": dep_summary,
         "reconciliation": light.get("reconciliation"),
         "execution_stats": light.get("execution_stats"),
@@ -378,6 +403,7 @@ def build_report_sections(light: dict, *, status: Optional[dict] = None,
         "candidate_lifecycle": light.get("candidate_lifecycle"),
         "loops": loops,
         "verifier": light.get("verifier"),
+        "dep_arb_intel": light.get("dep_arb_intel") or {},
         "research_loop": light.get("research_loop"),
         "lessons": light.get("lessons"),
         "stop_conditions": light.get("stop_conditions"),

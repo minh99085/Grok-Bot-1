@@ -43,8 +43,10 @@ def build_dep_arb_research_block(report: dict) -> dict:
     intel = report.get("dep_arb_intel") or {}
     exp = dep.get("experiments") or {}
     mid = exp.get("mid_convergence") or {}
+    grok_props = intel.get("grok_proposals") or {}
     grok_conv = intel.get("grok_convergence") or {}
     verifier = intel.get("claude_verifier") or {}
+    veto_quality = intel.get("veto_quality") or verifier.get("veto_quality") or {}
     booking = dep.get("booking") or {}
     return {
         "enabled": dep.get("enabled", True),
@@ -68,12 +70,13 @@ def build_dep_arb_research_block(report: dict) -> dict:
             "mid_convergence_by_horizon": mid.get("by_horizon") or {},
         },
         "intel": {
-            "grok_dependency_validated": (
-                (intel.get("grok_dependency") or {}).get("deterministic_validated_dependencies")),
+            "grok_proposals_validated": grok_props.get("validated"),
+            "grok_proposals_in": grok_props.get("proposals_in"),
             "grok_convergence_accuracy_60s": grok_conv.get("accuracy_60s"),
             "grok_convergence_scored_60s": grok_conv.get("scored_60s"),
-            "verifier_veto_quality": verifier.get("veto_quality"),
+            "verifier_veto_quality": veto_quality,
             "verifier_approved_settled": verifier.get("approved_settled"),
+            "veto_quality_verdict": veto_quality.get("verdict"),
         },
         "allowed_knobs": list(DEP_ARB_KNOBS),
     }

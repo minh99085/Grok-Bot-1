@@ -27,16 +27,18 @@ def test_build_dep_arb_research_block_compact():
             },
         },
         "dep_arb_intel": {
+            "grok_proposals": {"validated": 1, "proposals_in": 2},
             "grok_convergence": {"accuracy_60s": 0.75, "scored_60s": 4},
             "claude_verifier": {
-                "veto_quality": {"verdict": "good_vetoes", "n": 3},
                 "approved_settled": {"n": 2, "win_rate": 0.5},
             },
+            "veto_quality": {"verdict": "good_vetoes", "n": 3},
         },
     }
     block = build_dep_arb_research_block(report)
     assert block["booking"]["capture_ratio"] == 0.04
     assert block["experiments"]["mid_convergence_by_horizon"]["60"]["n"] == 8
+    assert block["intel"]["grok_proposals_validated"] == 1
     assert block["intel"]["grok_convergence_accuracy_60s"] == 0.75
     assert block["intel"]["verifier_veto_quality"]["verdict"] == "good_vetoes"
     assert "PULSE_DEPENDENCY_ARB_CONJUNCTION" in block["allowed_knobs"]
