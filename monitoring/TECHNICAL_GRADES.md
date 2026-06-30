@@ -1,24 +1,24 @@
 # Technical Data Grades
 
-**Generated:** 2026-06-29T23:38:13.758607+00:00  
-**Repo SHA:** `e41005c989fa`  
-**Ticks:** 778 | **Settled:** 5
+**Generated:** 2026-06-30T00:33:17.121088+00:00  
+**Repo SHA:** `08ae3c8c6b49`  
+**Ticks:** 37 | **Settled:** 6
 
 ## Composite
 
 | Metric | Score | Grade |
 |--------|------:|-------|
-| **Composite** | **68.0** | **D** |
-| Report overall | 61.3 | D |
-| Technical runtime | 83.7 | B |
+| **Composite** | **53.9** | **F** |
+| Report overall | 41.7 | F |
+| Technical runtime | 82.5 | B |
 
 ## Report scores (engine)
 
 | Section | Score | Grade |
 |---------|------:|-------|
-| Trading Performance | 62.6 | D |
-| Operation | 75.6 | C+ |
-| External Signals | 44.5 | F |
+| Trading Performance | 38.8 | F |
+| Operation | 61.1 | D |
+| External Signals | 28.0 | F |
 
 ## Technical runtime
 
@@ -26,28 +26,28 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
-| rtds_health | 97.0 | 20 |
-| tv_intake | 95.0 | 20 |
+| rtds_health | 100.0 | 20 |
+| tv_intake | 95.1 | 20 |
 | design_compliance | 70.0 | 25 |
-| trade_pipeline | 100.0 | 20 |
-| gate_coupling | 52.0 | 15 |
+| trade_pipeline | 81.8 | 20 |
+| gate_coupling | 63.9 | 15 |
 
-### Rtds Health (97.0)
+### Rtds Health (100.0)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
 | connected | 100.0 | 35 |
 | oracle_fresh | 100.0 | 30 |
-| stability | 85.0 | 20 |
+| stability | 100.0 | 20 |
 | price_feed | 100.0 | 15 |
 
-### Tv Intake (95.0)
+### Tv Intake (95.1)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
 | observe_only | 100.0 | 25 |
 | alert_flow | 100.0 | 25 |
-| reject_rate | 66.5 | 15 |
+| reject_rate | 67.5 | 15 |
 | trade_gates_off | 100.0 | 20 |
 | mtf_freshness | 100.0 | 15 |
 
@@ -66,7 +66,7 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | cohort_relaxed | 100.0 | 10 |
 | tv_trade_gates_off | 0.0 | 20 |
 
-### Trade Pipeline (100.0)
+### Trade Pipeline (81.8)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
@@ -74,25 +74,25 @@ _RTDS/oracle health, TV observe-only intake, design manifest compliance, pipelin
 | lifecycle | 100.0 | 20 |
 | execution_gate | 100.0 | 20 |
 | recon_checks | 100.0 | 15 |
-| not_halted | 100.0 | 10 |
-| uptime_ticks | 100.0 | 10 |
+| not_halted | 0.0 | 10 |
+| uptime_ticks | 18.5 | 10 |
 
-### Gate Coupling (52.0)
+### Gate Coupling (63.9)
 
 | Component | Score | Weight |
 |-----------|------:|-------:|
-| lifecycle_funnel | 30.0 | 25 |
-| exec_pass_rate | 66.1 | 25 |
-| reject_diversity | 64.7 | 20 |
-| cohort_session_load | 25.0 | 15 |
+| lifecycle_funnel | 30.4 | 25 |
+| exec_pass_rate | 68.8 | 25 |
+| reject_diversity | 64.3 | 20 |
+| cohort_session_load | 100.0 | 15 |
 | recent_eval_spread | 75.0 | 15 |
 
 ## VPS score history (last entries)
 
 | UTC | Settled | Overall | Trading | Operation | External |
 |-----|--------:|--------:|--------:|----------:|---------:|
-| 2026-06-29 22:19:58 UTC | 2 | 50.0 | 39.8 | 75.9 | 44.5 |
-| 2026-06-29 22:33:15 UTC | 3 | 50.8 | 41.4 | 76.1 | 44.5 |
-| 2026-06-29 23:04:45 UTC | 4 | 56.8 | 53.4 | 75.9 | 44.5 |
-| 2026-06-29 23:21:15 UTC | 5 | 63.6 | 67.1 | 75.6 | 44.5 |
 | 2026-06-29 23:32:15 UTC | 5 | 61.4 | 62.6 | 75.8 | 44.5 |
+| 2026-06-29 23:48:04 UTC | 5 | 63.7 | 67.1 | 76.0 | 44.5 |
+| 2026-06-30 00:02:03 UTC | 6 | 52.2 | 52.2 | 76.2 | 28.0 |
+| 2026-06-30 00:19:33 UTC | 6 | 50.5 | 48.8 | 76.3 | 28.0 |
+| 2026-06-30 00:30:16 UTC | 6 | 41.6 | 38.8 | 61.0 | 28.0 |
