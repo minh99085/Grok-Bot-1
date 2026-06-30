@@ -597,6 +597,7 @@ class DependencyArbLedger:
         now: float,
         *,
         resolver: Optional[Callable[[dict, float], tuple[Optional[bool], str]]] = None,
+        on_settled: Optional[Callable[[dict], None]] = None,
     ) -> int:
         n = 0
         for pk, p in list(self.positions.items()):
@@ -627,6 +628,11 @@ class DependencyArbLedger:
             self.realized_profit_usd = round(self.realized_profit_usd + profit, 6)
             self.settled += 1
             n += 1
+            if on_settled is not None:
+                try:
+                    on_settled(p)
+                except Exception:  # noqa: BLE001
+                    pass
         return n
 
     def _normalize_position(self, p: dict) -> dict:

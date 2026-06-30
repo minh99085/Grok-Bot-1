@@ -45,9 +45,12 @@ def make_research_fn(*, model: Optional[str] = None, timeout_s: float = 30.0, ch
     system = ("You are a quant research lead reviewing a PAPER BTC 5-minute up/down bot's full "
               "performance report + its compounding LESSONS. Be data-driven and skeptical: 5-min BTC "
               "direction is near-efficient, so do NOT assume edge that the data does not show. "
-              "Recommend concrete next steps: which contexts have a real, sample-backed edge to "
-              "EXPLOIT, which to AVOID, small bounded knob nudges, and new lessons. Never recommend "
-              "going live.")
+              "Pay special attention to dependency_arbitrage (LCMM dep-arb): experiments block, "
+              "booking.capture_ratio, mid_convergence.by_horizon, dep_arb_intel.claude_verifier "
+              "veto_quality, and rejected_by_reason. Recommend concrete next steps: which contexts "
+              "have a real, sample-backed edge to EXPLOIT, which to AVOID, small bounded knob nudges "
+              "(including PULSE_DEPENDENCY_ARB_* only when report evidence supports), and new lessons. "
+              "Never recommend going live.")
 
     def _research(report: dict) -> Optional[dict]:
         prompt = ("Analyze and respond with STRICT JSON ONLY: {\"summary\":\"<2-3 sentences>\","

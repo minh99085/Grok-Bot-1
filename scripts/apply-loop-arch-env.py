@@ -170,6 +170,11 @@ UPDATES = {
     "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.52",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
+    "PULSE_DEP_ARB_VERIFIER_ENABLED": "1",
+    "PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY": "1",
+    "PULSE_DEP_ARB_VERIFIER_FAIL_OPEN": "1",
+    "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT": "0",
+    "PULSE_DEP_ARB_VERIFIER_MAX_CALLS_PER_HOUR": "40",
     # WS2 (operator-authorized 2026-06-29): un-pause directional for DOWN-side data COLLECTION only.
     # Stays DOWN-only (UP hard-blocked) + a small cold-start exploration carve-out so proven-winning
     # buckets can actually be discovered instead of deadlocking at zero trades. Capped by

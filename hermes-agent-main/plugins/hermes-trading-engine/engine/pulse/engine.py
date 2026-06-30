@@ -304,6 +304,11 @@ class PulseConfig:
     stop_sharpe_min_samples: int = 20
     grok_dependency_enabled: bool = False       # advisory dependency screener (shadow)
     grok_dependency_interval_s: float = 180.0
+    dep_arb_verifier_enabled: bool = True       # Claude maker-checker on conjunction binds
+    dep_arb_verifier_conjunction_only: bool = True
+    dep_arb_verifier_fail_open: bool = True
+    dep_arb_verifier_require_verdict: bool = False
+    dep_arb_verifier_max_calls_per_hour: int = 40
     eth_series_enabled: bool = False            # append ETH 5m/15m slugs when listed
     sizing_promotion_gated: bool = True       # Kelly only on promoted buckets (WS3)
     # ---- Learned Selectivity Gate v1 (between decision and execution; PAPER ONLY) ----
@@ -773,6 +778,20 @@ class PulseConfig:
             grok_dependency_enabled=str(os.getenv("PULSE_GROK_DEPENDENCY_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             grok_dependency_interval_s=_envf("PULSE_GROK_DEPENDENCY_INTERVAL_S", 180.0),
+            dep_arb_verifier_enabled=str(
+                os.getenv("PULSE_DEP_ARB_VERIFIER_ENABLED", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dep_arb_verifier_conjunction_only=str(
+                os.getenv("PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dep_arb_verifier_fail_open=str(
+                os.getenv("PULSE_DEP_ARB_VERIFIER_FAIL_OPEN", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dep_arb_verifier_require_verdict=str(
+                os.getenv("PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dep_arb_verifier_max_calls_per_hour=int(
+                _envf("PULSE_DEP_ARB_VERIFIER_MAX_CALLS_PER_HOUR", 40)),
             sizing_promotion_gated=str(os.getenv("PULSE_SIZING_PROMOTION_GATED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             selectivity_gate_enabled=str(os.getenv("PULSE_SELECTIVITY_GATE_ENABLED", "1"))
@@ -1372,19 +1391,27 @@ class PulseEngine:
         # ---- #1 independent Claude maker-checker verifier + #4 research meta-loop ----
         self.claude_budget = None
         self.verifier = None
+        self.dep_arb_verifier = None
         self.research_loop = None
         self._research_avoid: set = set()      # canonical "dim=bucket" contexts auto-blocked by Claude
         self._research_exploit: set = set()    # "dim=bucket" contexts Claude flags AND data proves WINNING
         try:
             from engine.pulse.claude_client import anthropic_key
-            need_claude = bool(self.cfg.verifier_enabled) or bool(self.cfg.research_loop_enabled)
+            need_claude = (bool(self.cfg.verifier_enabled)
+                           or bool(self.cfg.research_loop_enabled)
+                           or bool(self.cfg.dep_arb_verifier_enabled))
             if need_claude and anthropic_key():
                 from engine.pulse.grok_intel import GrokBudget
+                hourly = {
+                    "verifier": self.cfg.verifier_max_calls_per_hour,
+                    "research": self.cfg.research_max_calls_per_hour,
+                }
+                if self.cfg.dep_arb_verifier_enabled:
+                    hourly["verifier_dep_arb"] = self.cfg.dep_arb_verifier_max_calls_per_hour
                 self.claude_budget = GrokBudget(
                     daily_usd_cap=self.cfg.claude_budget_daily_usd,
                     est_usd_per_call=self.cfg.claude_est_usd_per_call,
-                    per_feature_hourly={"verifier": self.cfg.verifier_max_calls_per_hour,
-                                        "research": self.cfg.research_max_calls_per_hour})
+                    per_feature_hourly=hourly)
                 if self.cfg.verifier_enabled:
                     from engine.pulse.verifier import ClaudeVerifier
                     self.verifier = ClaudeVerifier(
@@ -1393,6 +1420,15 @@ class PulseEngine:
                         explore_approve=self.cfg.verifier_explore_approve,
                         explore_max_size_fraction=float(
                             self.cfg.verifier_explore_max_size_fraction),
+                    ).start()
+                if self.cfg.dep_arb_verifier_enabled:
+                    from engine.pulse.dep_arb_verifier import ClaudeDepArbVerifier
+                    self.dep_arb_verifier = ClaudeDepArbVerifier(
+                        budget=self.claude_budget,
+                        enabled=True,
+                        fail_open=self.cfg.dep_arb_verifier_fail_open,
+                        require_verdict=self.cfg.dep_arb_verifier_require_verdict,
+                        conjunction_only=self.cfg.dep_arb_verifier_conjunction_only,
                     ).start()
                 if self.cfg.research_loop_enabled:
                     from engine.pulse.research_loop import ResearchLoop
@@ -1404,7 +1440,7 @@ class PulseEngine:
                         auto_apply=self.cfg.research_auto_apply).start()
         except Exception:  # noqa: BLE001 — verifier/research never block startup
             logger.exception("claude verifier/research init failed; continuing")
-            self.claude_budget = self.verifier = self.research_loop = None
+            self.claude_budget = self.verifier = self.dep_arb_verifier = self.research_loop = None
         # OBSERVE-ONLY TradingView indicator webhook intake (enabled only when a secret is set).
         # Alerts become candidate signals only; they can never place/resize/bypass a paper trade.
         self.tradingview = None
@@ -1663,6 +1699,8 @@ class PulseEngine:
             self.trade_history.backfill_from_positions(list(self.ledger.positions.values()))
         if self.verifier is not None:
             self.verifier.load_state(acct.get("verifier") or {})
+        if self.dep_arb_verifier is not None:
+            self.dep_arb_verifier.load_state(acct.get("dep_arb_verifier") or {})
         if self.research_loop is not None:
             self.research_loop.load_state(acct.get("research_loop") or {})
         if self.edge_model is not None:          # the learned edge model accumulates across runs
@@ -1773,7 +1811,9 @@ class PulseEngine:
         if self.arb_ledger is not None:   # settle risk-free arb positions at window close (deterministic)
             self.arb_ledger.settle_due(now)
         if self.dep_arb_ledger is not None:
-            self.dep_arb_ledger.settle_due(now, resolver=self._resolve_dep_arb_position)
+            self.dep_arb_ledger.settle_due(
+                now, resolver=self._resolve_dep_arb_position,
+                on_settled=self._on_dep_arb_position_settled)
         ov = self.overlay.current(now) if self.overlay is not None else None
         ov_blackout = bool(ov and ov.get("blackout"))
         ov_vol_mult = float(ov.get("vol_multiplier", 1.0)) if ov else 1.0
@@ -2904,6 +2944,21 @@ class PulseEngine:
         self._prune_positions()
         self._persist()
         return {"ticks": self.ticks, "reasons": reasons, "stats": self.ledger.stats()}
+
+    def _on_dep_arb_position_settled(self, pos: dict) -> None:
+        """Grade Claude dep-arb verifier vs realized outcome (segregated from directional)."""
+        if self.dep_arb_verifier is None:
+            return
+        did = str(pos.get("decision_id") or "")
+        if not did:
+            return
+        acted = bool((pos.get("verifier") or {}).get("approved", True))
+        self.dep_arb_verifier.grade(
+            did,
+            won=bool(pos.get("won")),
+            pnl=float(pos.get("realized_profit_usd") or 0),
+            acted=acted,
+        )
 
     def _resolve_dep_arb_position(self, pos: dict, now: float) -> "tuple[Optional[bool], str]":
         """Resolve parent-UP outcome for dependency-arb settlement (Polymarket first, RTDS proxy)."""
@@ -4172,6 +4227,13 @@ class PulseEngine:
         report["arb_graph"] = getattr(self, "_arb_graph_report", None) or {"nodes": 0}
         report["grok_dependency"] = getattr(self, "_grok_dependency_report", None) or {
             "dependency_proposals": 0}
+        report["dep_arb_intel"] = {
+            "grok_dependency": report.get("grok_dependency") or {},
+            "claude_verifier": (self.dep_arb_verifier.report()
+                                if self.dep_arb_verifier is not None
+                                else {"enabled": False}),
+            "note": ("Grok proposes constraints (observe); Claude vets conjunction binds only."),
+        }
         report["bregman_projection"] = getattr(self, "_bregman_projection_report", None) or {
             "enabled": False}
         report["clob_feed"] = (
@@ -4704,6 +4766,46 @@ class PulseEngine:
                     self.dep_arb_ledger.rejected_by_reason[halt_reason] = (
                         int(self.dep_arb_ledger.rejected_by_reason.get(halt_reason, 0) or 0) + 1)
                     continue
+            if trade and self.dep_arb_verifier is not None:
+                dav = self.dep_arb_verifier
+                if dav.should_verify(str(getattr(v, "constraint_type", "") or "")):
+                    from engine.pulse.dep_arb_verifier import (
+                        build_dep_arb_verify_payload, shrink_dep_arb_trade)
+                    from engine.pulse.dependency_arb_experiments import _book_age_s
+                    did = dav.decision_id(v, child_key=str(child_id or ""))
+                    payload = build_dep_arb_verify_payload(
+                        v, trade,
+                        bregman_diag=bdiag,
+                        experiments=dict(getattr(self.dep_arb_ledger, "experiments_report", None) or {}),
+                        calibration_bucket=self.dep_arb_ledger.calibration.bucket_stats(
+                            float(trade.get("entry_vwap") or 0)),
+                        parent_book_age_s=_book_age_s(getattr(parent, "up_book", None), now),
+                        child_book_age_s=_book_age_s(getattr(child, "up_book", None), now),
+                        grok_dependency=getattr(self, "_grok_dependency_report", None),
+                    )
+                    dav.request(did, payload)
+                    self.loops.beat("dep_arb_verifier", now)
+                    verdict = dav.verdict_or_failopen(did)
+                    if verdict.get("pending") and self.cfg.dep_arb_verifier_require_verdict:
+                        self.dep_arb_ledger.rejected_by_reason["dep_arb_verifier_pending"] = (
+                            int(self.dep_arb_ledger.rejected_by_reason.get(
+                                "dep_arb_verifier_pending", 0) or 0) + 1)
+                        continue
+                    if not verdict.get("approve") and not verdict.get("pending"):
+                        self.dep_arb_ledger.rejected_by_reason["dep_arb_verifier_veto"] = (
+                            int(self.dep_arb_ledger.rejected_by_reason.get(
+                                "dep_arb_verifier_veto", 0) or 0) + 1)
+                        continue
+                    if verdict.get("approve"):
+                        msf = float(verdict.get("max_size_fraction", 1.0) or 1.0)
+                        if msf < 1.0 - 1e-9:
+                            trade = shrink_dep_arb_trade(trade, msf)
+                    trade["decision_id"] = did
+                    trade["verifier"] = {
+                        "approved": bool(verdict.get("approve")),
+                        "reason": str(verdict.get("reason") or "")[:200],
+                        "pending": bool(verdict.get("pending")),
+                    }
             if trade and self.dep_arb_ledger.book(trade, now=now):
                 self.loops.beat("dependency_arb", now)
 
@@ -4868,6 +4970,11 @@ class PulseEngine:
                    skill="independent Claude verdict", verifier="claude",
                    stop_condition="approve/veto verdict",
                    status_fn=(lambda: self.verifier.report()) if self.verifier else None)
+        r.register("dep_arb_verifier", role="verify(dep-arb)", trigger="per_conjunction_bind",
+                   skill="claude_dep_arb_verifier", verifier="claude",
+                   stop_condition="conjunction approve/veto",
+                   status_fn=(lambda: self.dep_arb_verifier.report())
+                   if self.dep_arb_verifier else None)
         r.register("execution", role="execute", trigger="per_decision",
                    skill="execution-quality gate (authoritative)", stop_condition="fill or reject")
         if self.arb_ledger is not None:
@@ -5213,6 +5320,9 @@ class PulseEngine:
                               "recent_windows": self._recent_windows[-40:],
                               "verifier": (self.verifier.to_state() if self.verifier is not None
                                            else {}),
+                              "dep_arb_verifier": (
+                                  self.dep_arb_verifier.to_state()
+                                  if self.dep_arb_verifier is not None else {}),
                               "research_loop": (self.research_loop.to_state()
                                                 if self.research_loop is not None else {}),
                               "lessons": self.lessons.to_state(),
