@@ -4911,6 +4911,7 @@ class PulseEngine:
                 halted, halt_reason = dep_arb_bucket_bleeding(
                     float(trade.get("entry_vwap") or 0),
                     self.dep_arb_ledger.calibration,
+                    constraint_type=str(trade.get("constraint_type") or ""),
                 )
                 if halted:
                     self.dep_arb_ledger.rejected_by_reason[halt_reason] = (

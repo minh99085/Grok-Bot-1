@@ -33,11 +33,19 @@ def dep_arb_bucket_bleeding(
     *,
     min_n: int = DEP_ARB_BUCKET_HALT_MIN_N,
     max_pf: float = DEP_ARB_BUCKET_HALT_MAX_PF,
+    constraint_type: Optional[str] = None,
 ) -> "tuple[bool, str]":
-    """True when outcome-settled calibration shows a bucket is net-losing (PF < max_pf)."""
+    """True when outcome-settled calibration shows a bucket is net-losing (PF < max_pf).
+
+    ``constraint_type`` scopes the check to that constraint's OWN settled record (e.g.
+    ``conjunction_implication`` vs ``nested_implication``). This is essential: the negative-EV
+    nested heuristic poisons the shared aggregate buckets, which would otherwise block the
+    positive-EV conjunction (Fréchet floor) lane even though conjunction never bled. When a
+    constraint type has no settled history yet, it is not flagged (n < min_n).
+    """
     if calibration is None:
         return False, ""
-    stats = calibration.bucket_stats(entry_vwap)
+    stats = calibration.bucket_stats(entry_vwap, constraint_type=constraint_type)
     n = int(stats.get("n") or 0)
     pf = stats.get("profit_factor")
     if n < int(min_n) or pf is None:
@@ -66,21 +74,26 @@ def outcome_settled_pnl(trade: dict, *, outcome_up: bool) -> float:
 
 @dataclass
 class DependencyArbCalibration:
-    """Per entry-price bucket stats from outcome-settled positions (Kelly p_win source)."""
+    """Per entry-price bucket stats from outcome-settled positions (Kelly p_win source).
+
+    Tracked BOTH in aggregate (``buckets`` — used by Kelly sizing) and segregated by
+    ``constraint_type`` (``by_type`` — used by bucket-bleeding self-protection). Segregation is
+    essential: the negative-EV ``nested_implication`` heuristic would otherwise poison the shared
+    buckets and block the positive-EV ``conjunction_implication`` (Fréchet floor) lane even though
+    conjunction never bled.
+    """
 
     buckets: dict = field(default_factory=dict)
+    by_type: dict = field(default_factory=dict)  # {constraint_type: {bucket_label: {...}}}
 
-    def _bucket(self, label: str) -> dict:
-        b = self.buckets.setdefault(label, {
-            "n": 0, "wins": 0, "win_rate": None, "avg_pnl": None,
-            "profit_factor": None, "gross_win": 0.0, "gross_loss": 0.0,
-            "last_won": None,
-        })
-        return b
+    @staticmethod
+    def _new_bucket() -> dict:
+        return {"n": 0, "wins": 0, "win_rate": None, "avg_pnl": None,
+                "profit_factor": None, "gross_win": 0.0, "gross_loss": 0.0,
+                "last_won": None}
 
-    def record_settled(self, entry_vwap: float, pnl: float, won: bool) -> None:
-        label = entry_price_bucket(entry_vwap)
-        b = self._bucket(label)
+    @staticmethod
+    def _update_bucket(b: dict, pnl: float, won: bool) -> None:
         b["n"] += 1
         if won:
             b["wins"] += 1
@@ -101,9 +114,22 @@ class DependencyArbCalibration:
         else:
             b["profit_factor"] = None
 
-    def bucket_stats(self, entry_vwap: float) -> dict:
+    def record_settled(self, entry_vwap: float, pnl: float, won: bool,
+                       constraint_type: Optional[str] = None,
+                       *, update_aggregate: bool = True, update_by_type: bool = True) -> None:
         label = entry_price_bucket(entry_vwap)
-        b = self.buckets.get(label)
+        if update_aggregate:
+            self._update_bucket(self.buckets.setdefault(label, self._new_bucket()), pnl, won)
+        ct = str(constraint_type or "").strip()
+        if update_by_type and ct:
+            store = self.by_type.setdefault(ct, {})
+            self._update_bucket(store.setdefault(label, self._new_bucket()), pnl, won)
+
+    def bucket_stats(self, entry_vwap: float, constraint_type: Optional[str] = None) -> dict:
+        label = entry_price_bucket(entry_vwap)
+        ct = str(constraint_type or "").strip()
+        src = self.by_type.get(ct) if ct else self.buckets
+        b = (src or {}).get(label)
         if not b:
             return {"bucket": label, "n": 0, "wins": 0, "win_rate": None,
                     "avg_pnl": None, "profit_factor": None, "last_won": None}
@@ -111,22 +137,32 @@ class DependencyArbCalibration:
         out["bucket"] = label
         return out
 
+    @staticmethod
+    def _public_buckets(store: dict) -> dict:
+        return {
+            label: {k: v for k, v in b.items() if not str(k).startswith("_")}
+            for label, b in (store or {}).items()
+        }
+
     def report(self) -> dict:
         return {
-            "buckets": {
-                label: {k: v for k, v in b.items() if not str(k).startswith("_")}
-                for label, b in self.buckets.items()
-            },
+            "buckets": self._public_buckets(self.buckets),
+            "by_type": {ct: self._public_buckets(bs) for ct, bs in self.by_type.items()},
             "min_samples_kelly": DEP_ARB_KELLY_MIN_SAMPLES,
         }
 
     def to_state(self) -> dict:
-        return {"buckets": {k: dict(v) for k, v in self.buckets.items()}}
+        return {
+            "buckets": {k: dict(v) for k, v in self.buckets.items()},
+            "by_type": {ct: {k: dict(v) for k, v in bs.items()}
+                        for ct, bs in self.by_type.items()},
+        }
 
     def load_state(self, data: dict) -> None:
         if not data:
             return
         self.buckets = dict(data.get("buckets") or {})
+        self.by_type = {ct: dict(bs) for ct, bs in (data.get("by_type") or {}).items()}
 
 
 def compute_dependency_arb_trade_usd(
@@ -624,7 +660,8 @@ class DependencyArbLedger:
             p["realized_profit_usd"] = profit
             p.setdefault("theoretical_profit_usd", p.get("expected_profit_usd"))
             self.calibration.record_settled(
-                float(p.get("entry_vwap") or 0), profit, bool(p.get("won")))
+                float(p.get("entry_vwap") or 0), profit, bool(p.get("won")),
+                constraint_type=str(p.get("constraint_type") or ""))
             self.realized_profit_usd = round(self.realized_profit_usd + profit, 6)
             self.settled += 1
             n += 1
@@ -743,8 +780,16 @@ class DependencyArbLedger:
         self._recompute_realized_totals()
 
     def _rebuild_calibration_from_settled(self) -> None:
-        """Rebuild bucket stats from outcome-settled positions after state load."""
-        if self.calibration.buckets:
+        """Rebuild bucket stats from outcome-settled positions after state load.
+
+        Positions are the ground truth (each carries its constraint_type), so this also backfills
+        the per-constraint_type `by_type` record for legacy state persisted before segregation
+        existed. Aggregate and by_type are each only rebuilt if missing, to avoid double-counting a
+        record that was already loaded from disk.
+        """
+        rebuild_agg = not self.calibration.buckets
+        rebuild_by_type = not self.calibration.by_type
+        if not rebuild_agg and not rebuild_by_type:
             return
         for p in self.positions.values():
             if p.get("status") != "settled" or not p.get("outcome_settled"):
@@ -753,4 +798,7 @@ class DependencyArbLedger:
                 float(p.get("entry_vwap") or 0),
                 float(p.get("realized_profit_usd") or 0),
                 bool(p.get("won")),
+                constraint_type=str(p.get("constraint_type") or ""),
+                update_aggregate=rebuild_agg,
+                update_by_type=rebuild_by_type,
             )
