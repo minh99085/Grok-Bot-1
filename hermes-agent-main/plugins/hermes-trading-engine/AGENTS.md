@@ -145,3 +145,31 @@ min-edge, depth, price cap). Smoke test without Docker: `python scripts/run_btc_
 `python -m pytest tests/` — `tests/test_btc_pulse_engine.py` covers ingestion, the digital
 fair value, rolling vol, open-snapshot gating, the loosened decision, paper fill + settlement
 P&L, calibration, and a full deterministic trade→settle→calibrate cycle.
+
+## Cursor Cloud specific instructions
+
+These notes are for running this plugin **locally (venv) in a Cloud Agent VM**, where Docker is
+not pre-installed. The venv lives at `plugins/hermes-trading-engine/.venv` (gitignored). Run all
+commands from `plugins/hermes-trading-engine` with the venv activated (`. .venv/bin/activate`).
+
+- **Python 3.12 is fine** here even though the Dockerfile pins 3.11 — all deps
+  (`fastapi`/`uvicorn`/`httpx`/`websockets`/`ortools`/`python-docx`) have 3.12 wheels.
+- **Run the engine (smoke / dev loop):** set a writable data dir first, since the default `/data`
+  is not writable outside Docker:
+  `HTE_DATA_DIR=/tmp/hte-data python scripts/run_btc_pulse.py --max-ticks 3`. This makes **live**
+  calls to Polymarket Gamma + CLOB and a CEX price feed. **Binance returns HTTP 451 (geo-block)
+  from this VM** — that is expected and harmless; the engine falls back to Coinbase.
+- **Run the API/dashboard:** `HTE_DATA_DIR=/tmp/hte-data uvicorn engine.app:app --host 127.0.0.1
+  --port 8800`, then `GET /api/health`, `/api/polymarket/training/btc_pulse`, and `/dashboard`.
+  The API is **read-only and serves whatever the loop wrote to `HTE_DATA_DIR`** — point it at the
+  same dir the engine ran against, or every endpoint reports `available: false`.
+- **Tests are slow + partly live.** The full suite is ~612 tests and several drive the engine
+  through many ticks (with real network calls / sleeps), so a serial `python -m pytest tests/`
+  takes ~10+ min and can appear to "hang" around 40% on the slow ticking tests (it is not stuck).
+  Prefer parallel + a generous per-test cap: `pip install pytest-xdist pytest-timeout` (both are
+  dev-only, not in `requirements*.txt`), then
+  `python -m pytest tests/ -n 4 --timeout=300 --timeout-method=thread`. Use **`--timeout-method=thread`**,
+  not `signal`: a couple of tests block in C extensions where SIGALRM cannot fire.
+  `test_pulse_selectivity.py::test_engine_underdog_floor_blocks_cheap_side` alone takes ~50s — a
+  short per-test timeout under parallel contention will kill it as a false "worker crash".
+- **No linter** is configured for this plugin (no ruff/flake8/eslint here).
