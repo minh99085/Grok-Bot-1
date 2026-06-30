@@ -91,7 +91,7 @@ UPDATES = {
     "PULSE_STOP_MIN_SAMPLES": "60",
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 8-11).
     "PULSE_TICK_SECONDS": "15",
-    "PULSE_MAX_PRICE": "0.52",
+    "PULSE_MAX_PRICE": "0.55",
     # [TV-LOCK] context gate off — TV never blocks entries.
     "PULSE_TV_CONTEXT_GATE": "0",
     # TV confidence tier: modulate min_edge/max_price at 15m sweet spot (not a trade gate).
@@ -152,9 +152,8 @@ UPDATES = {
     "PULSE_ARB_EPSILON_5M": "0.003",
     "PULSE_ARB_EPSILON_15M": "0.003",
     "PULSE_DEPENDENCY_ARB_EPSILON": "0.03",
-    # WS3-B: TRUE multi-child conjunction constraint (Fréchet floor). Default OFF — flip to "1" to
-    # START MEASURING it (outcome-settled) before trusting; the bound rarely binds but is real.
-    "PULSE_DEPENDENCY_ARB_CONJUNCTION": "0",
+    # WS3-B: Fréchet conjunction floor — enabled alongside nested for full dep-arb architecture.
+    "PULSE_DEPENDENCY_ARB_CONJUNCTION": "1",
     # Dep-arb experiments: nested + conjunction paper execute (operator re-enabled nested 2026-06-30),
     # clock-skew filter, mid-convergence observe-only telemetry.
     "PULSE_DEPENDENCY_ARB_NESTED_EXECUTE": "1",
@@ -177,7 +176,8 @@ UPDATES = {
     "PULSE_GROK_DEP_CONVERGENCE_MIN_CONVERGE_60S": "0.35",
     "PULSE_GROK_DEP_CONVERGENCE_MAX_CALLS_PER_HOUR": "30",
     "PULSE_DEP_ARB_VERIFIER_ENABLED": "1",
-    "PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY": "1",
+    # Claude maker-checker on nested + conjunction (fail-open until veto_quality grades).
+    "PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY": "0",
     "PULSE_DEP_ARB_VERIFIER_FAIL_OPEN": "1",
     "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT": "0",
     "PULSE_DEP_ARB_VERIFIER_MAX_CALLS_PER_HOUR": "40",

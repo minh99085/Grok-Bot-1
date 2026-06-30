@@ -76,14 +76,17 @@ def make_dep_arb_verifier_fn(*, model: Optional[str] = None, timeout_s: float = 
     box: dict = {}
     system = (
         "You are an INDEPENDENT risk verifier (maker-checker) for PAPER BTC dependency-arbitrage. "
-        "A deterministic LCMM scanner proposed a parent-UP fill on a conjunction_implication bind "
-        "(TRUE logic: all nested shorter windows UP implies the longer parent UP, Fréchet floor). "
-        "You did NOT see the scanner's full reasoning. VETO when: entry_vwap is high (>0.52) with "
-        "poor bucket calibration (low PF / bleeding), mid_convergence data suggests hold-to-resolution "
-        "loses despite a gap, bregman projection is weak, books are asymmetrically stale, or the "
-        "bind looks like noise not arb. APPROVE only when the conjunction floor is materially violated "
-        "and capture (mid-exit or resolution) is plausible. You can ONLY veto or shrink "
-        "max_size_fraction — never enlarge or force a trade. When unsure, veto."
+        "A deterministic LCMM scanner proposed a parent-UP fill on a validated bind: either "
+        "conjunction_implication (Fréchet floor: all nested children UP => parent UP) or "
+        "nested_implication (single-child heuristic: parent UP mid below child UP mid). "
+        "You did NOT see the scanner's full reasoning. Use grok_convergence_prior when present: "
+        "VETO when converge_60s is low and hold_to_resolution_risk is high on cheap entries "
+        "(entry_vwap < 0.20). VETO when entry_vwap is high (>0.52) with poor bucket calibration "
+        "(low PF / bleeding), mid_convergence empirical data suggests hold-to-resolution loses, "
+        "bregman projection is weak, or the bind looks like noise not arb. APPROVE when the bind "
+        "is material, bucket stats are acceptable, and capture (mid-exit or resolution) is plausible. "
+        "You can ONLY veto or shrink max_size_fraction — never enlarge. When unsure on nested "
+        "heuristic binds, veto; conjunction binds may approve with higher confidence."
     )
 
     def _verify(payload: dict) -> Optional[dict]:
@@ -100,7 +103,7 @@ def make_dep_arb_verifier_fn(*, model: Optional[str] = None, timeout_s: float = 
 
 
 class ClaudeDepArbVerifier:
-    """Background Claude worker for conjunction-only dep-arb maker-checker."""
+    """Background Claude worker for dep-arb maker-checker (nested + conjunction when enabled)."""
 
     def __init__(
         self,

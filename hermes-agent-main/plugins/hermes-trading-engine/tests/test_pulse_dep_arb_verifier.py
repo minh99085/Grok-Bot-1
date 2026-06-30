@@ -16,6 +16,12 @@ def test_should_verify_conjunction_only():
     assert v.should_verify("nested_implication") is False
 
 
+def test_should_verify_nested_and_conjunction_when_not_conjunction_only():
+    v = ClaudeDepArbVerifier(enabled=True, conjunction_only=False, verify_fn=lambda p: None)
+    assert v.should_verify("conjunction_implication") is True
+    assert v.should_verify("nested_implication") is True
+
+
 def test_build_payload_includes_lane_and_trade():
     viol = DependencyViolation(
         constraint_type="conjunction_implication",

@@ -140,6 +140,12 @@ def main() -> int:
         issues.append(_issue("strategy_halted", "P0", str(stop.get("stalled") or stop),
                              "inspect stop_conditions"))
 
+    dav = (status.get("dep_arb_intel") or {}).get("claude_verifier") or {}
+    if dav.get("enabled") and dav.get("conjunction_only"):
+        issues.append(_issue(
+            "dep_arb_verifier_conjunction_only", "P1",
+            "Claude dep-arb verifier skips nested_implication fills",
+            "set PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY=0"))
     dep = status.get("dependency_arbitrage") or {}
     exp = dep.get("experiments") or {}
     if exp.get("nested_execute_enabled") is False:
