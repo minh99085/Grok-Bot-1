@@ -389,6 +389,7 @@ class PulseConfig:
     stop_min_samples: int = 30
     stop_min_profit_factor: float = 0.85
     stop_max_drawdown_pct: float = 25.0
+    stop_dep_arb_guard_enabled: bool = True
     # ---- Late-window high-conviction entry mode (time-decay edge; PAPER ONLY) ----
     # When enabled, only late-window AND high-conviction setups may trade (restrict-only). The edge
     # is ALWAYS measured observe-only (cohort vs other) so it can be graded before being enabled.
@@ -949,6 +950,9 @@ class PulseConfig:
             stop_min_samples=int(_envf("PULSE_STOP_MIN_SAMPLES", 30)),
             stop_min_profit_factor=_envf("PULSE_STOP_MIN_PROFIT_FACTOR", 0.85),
             stop_max_drawdown_pct=_envf("PULSE_STOP_MAX_DRAWDOWN_PCT", 25.0),
+            stop_dep_arb_guard_enabled=str(
+                os.getenv("PULSE_STOP_DEP_ARB_GUARD_ENABLED", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             late_window_entry_enabled=str(os.getenv("PULSE_LATE_WINDOW_ENTRY", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             late_window_max_ttc_s=_envf("PULSE_LATE_WINDOW_MAX_TTC_S", 120.0),
@@ -1207,7 +1211,8 @@ class PulseEngine:
             min_profit_factor=self.cfg.stop_min_profit_factor,
             max_drawdown_pct=self.cfg.stop_max_drawdown_pct,
             min_sharpe=float(self.cfg.stop_min_sharpe),
-            sharpe_min_samples=int(self.cfg.stop_sharpe_min_samples)))
+            sharpe_min_samples=int(self.cfg.stop_sharpe_min_samples),
+            dep_arb_guard_enabled=bool(self.cfg.stop_dep_arb_guard_enabled)))
         from engine.pulse.clob_feed import ClobBookFeed
         self.clob_feed = ClobBookFeed(websocket_enabled=bool(self.cfg.clob_websocket_enabled))
         self._wire_clob_feed_metrics()
