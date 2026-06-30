@@ -44,7 +44,9 @@ function Invoke-SshCmd([string]$RemoteCmd) {
 function Invoke-SshScript([string]$Body) {
     $localScript = Join-Path $env:TEMP "grok-bot1-remote-$([Guid]::NewGuid().ToString('N')).sh"
     $remoteScript = "/tmp/grok-bot1-remote-$([Guid]::NewGuid().ToString('N')).sh"
-    [IO.File]::WriteAllText($localScript, $Body)
+    # Unix LF only — CRLF breaks `set -e` on Linux remote scripts.
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [IO.File]::WriteAllText($localScript, ($Body -replace "`r`n", "`n"), $utf8NoBom)
     & scp.exe -i $SshKey -o StrictHostKeyChecking=no $localScript "${VpsUser}@${VpsHost}:$remoteScript"
     Invoke-SshCmd "bash $remoteScript; rm -f $remoteScript"
     Remove-Item $localScript -Force -ErrorAction SilentlyContinue
