@@ -280,6 +280,15 @@ class PulseConfig:
     dependency_arb_kelly_enabled: bool = False  # edge-proportional sizing (Lever C; default OFF)
     dependency_arb_kelly_fraction: float = 0.25  # quarter-Kelly cap multiplier
     dependency_arb_kelly_depth_frac: float = 0.5  # cap size at this frac of ask depth
+    # Dep-arb experiments (paper-only): conjunction-only execute, clock-skew, mid-convergence observe
+    dependency_arb_nested_execute: bool = True
+    dependency_arb_clock_skew_enabled: bool = False
+    dependency_arb_min_parent_book_age_s: float = 120.0
+    dependency_arb_max_child_book_age_s: float = 90.0
+    dependency_arb_max_child_window_age_s: float = 120.0
+    dependency_arb_mid_convergence_observe: bool = True
+    dependency_arb_mid_convergence_horizons_s: tuple = (30.0, 60.0, 120.0)
+    dependency_arb_experiment_auto_apply: bool = True
     bregman_projection_enabled: bool = False  # WS4 Layer 2 diagnostics
     bregman_trade_authority: bool = False     # Bregman sizes Lane B when True
     bregman_alpha: float = 0.9
@@ -713,6 +722,28 @@ class PulseConfig:
             in ("1", "true", "yes", "on"),
             dependency_arb_kelly_fraction=_envf("PULSE_DEPENDENCY_ARB_KELLY_FRACTION", 0.25),
             dependency_arb_kelly_depth_frac=_envf("PULSE_DEPENDENCY_ARB_KELLY_DEPTH_FRAC", 0.5),
+            dependency_arb_nested_execute=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_NESTED_EXECUTE", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_clock_skew_enabled=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_min_parent_book_age_s=_envf(
+                "PULSE_DEPENDENCY_ARB_MIN_PARENT_BOOK_AGE_S", 120.0),
+            dependency_arb_max_child_book_age_s=_envf(
+                "PULSE_DEPENDENCY_ARB_MAX_CHILD_BOOK_AGE_S", 90.0),
+            dependency_arb_max_child_window_age_s=_envf(
+                "PULSE_DEPENDENCY_ARB_MAX_CHILD_WINDOW_AGE_S", 120.0),
+            dependency_arb_mid_convergence_observe=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_OBSERVE", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_mid_convergence_horizons_s=tuple(
+                float(x.strip()) for x in str(
+                    os.getenv("PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_HORIZONS_S", "30,60,120")
+                ).split(",") if x.strip()),
+            dependency_arb_experiment_auto_apply=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             bregman_projection_enabled=str(os.getenv("PULSE_BREGMAN_PROJECTION_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             bregman_trade_authority=str(os.getenv("PULSE_BREGMAN_TRADE_AUTHORITY", "0"))
@@ -1190,14 +1221,22 @@ class PulseEngine:
             from engine.pulse.arbitrage import ArbLedger
             self.arb_ledger = ArbLedger()
         self.dep_arb_ledger = None
+        self._dep_arb_mid_observer = None
         if bool(getattr(self.cfg, "dependency_arb_enabled", True)):
             from engine.pulse.dependency_arb import DependencyArbLedger
+            from engine.pulse.dependency_arb_experiments import DepArbMidConvergenceObserver
             self.dep_arb_ledger = DependencyArbLedger(
                 execute_enabled=bool(self.cfg.dependency_arb_execute_enabled),
                 kelly_enabled=bool(self.cfg.dependency_arb_kelly_enabled),
                 kelly_fraction=float(self.cfg.dependency_arb_kelly_fraction),
                 kelly_depth_frac=float(self.cfg.dependency_arb_kelly_depth_frac),
             )
+            self._dep_arb_mid_observer = DepArbMidConvergenceObserver(
+                horizons_s=tuple(self.cfg.dependency_arb_mid_convergence_horizons_s
+                                 or (30.0, 60.0, 120.0)),
+            )
+        self._loop_synthesis_cache: dict = {}
+        self._dep_arb_experiment_applied: list = []
         # market-beating benchmark for the learning blend: grade the edge model's P(up) vs the MARKET
         # price (poly_yes) per window; the blend only activates when the model actually beats the
         # market out-of-sample (kills phantom edge — calibrated != more accurate than the market).
@@ -1559,6 +1598,9 @@ class PulseEngine:
             self.dep_arb_ledger.kelly_enabled = bool(self.cfg.dependency_arb_kelly_enabled)
             self.dep_arb_ledger.kelly_fraction = float(self.cfg.dependency_arb_kelly_fraction)
             self.dep_arb_ledger.kelly_depth_frac = float(self.cfg.dependency_arb_kelly_depth_frac)
+        if getattr(self, "_dep_arb_mid_observer", None) is not None:
+            self._dep_arb_mid_observer.load_state(acct.get("dep_arb_mid_observer") or {})
+        self._dep_arb_experiment_applied = list(acct.get("dep_arb_experiment_applied") or [])[-30:]
         self._allowlist_explored = int(acct.get("allowlist_explored", 0) or 0)
         self._allowlist_blocked = int(acct.get("allowlist_blocked", 0) or 0)
         # restore research avoid-rules, but RE-VALIDATE each against current evidence (drops legacy
@@ -2884,7 +2926,20 @@ class PulseEngine:
     def _dep_arb_report(self) -> dict:
         if self.dep_arb_ledger is None:
             return {}
-        return self.dep_arb_ledger.report(walk_forward=self._dep_arb_walk_forward())
+        rep = self.dep_arb_ledger.report(walk_forward=self._dep_arb_walk_forward())
+        obs = getattr(self, "_dep_arb_mid_observer", None)
+        rep["experiments"] = {
+            "nested_execute_enabled": bool(self.cfg.dependency_arb_nested_execute),
+            "clock_skew_enabled": bool(self.cfg.dependency_arb_clock_skew_enabled),
+            "clock_skew_params": {
+                "min_parent_book_age_s": self.cfg.dependency_arb_min_parent_book_age_s,
+                "max_child_book_age_s": self.cfg.dependency_arb_max_child_book_age_s,
+                "max_child_window_age_s": self.cfg.dependency_arb_max_child_window_age_s,
+            },
+            "mid_convergence": (obs.report() if obs is not None else {}),
+        }
+        self.dep_arb_ledger.experiments_report = rep["experiments"]
+        return rep
 
     def _settle_due(self, now: float) -> None:
         for pos in list(self.ledger.open_positions()):
@@ -4169,8 +4224,32 @@ class PulseEngine:
         report["scores"] = compute_report_scores(
             report["sections"], global_reconciled=bool(report.get("global_reconciled")))
         report["score_history"] = self._score_history.to_dict()
+        report["loop_synthesis"] = self._loop_synthesis_and_improve(report)
         report["schema"] = "btc_pulse_light_report/1.3"
         return report
+
+    def _loop_synthesis_and_improve(self, report: dict) -> dict:
+        """WS5 loop engine: read live report, emit proposals, apply bounded dep-arb self-improve."""
+        from engine.pulse.loop_synthesis import synthesize
+        from engine.pulse.dependency_arb_experiments import apply_dep_arb_experiments
+        synth = synthesize(report)
+        applied: list = []
+        if self.dep_arb_ledger is not None:
+            applied = apply_dep_arb_experiments(
+                self.cfg,
+                report.get("dependency_arbitrage") or {},
+                auto_apply=bool(self.cfg.dependency_arb_experiment_auto_apply),
+            )
+            if applied:
+                self._dep_arb_experiment_applied = (
+                    self._dep_arb_experiment_applied + applied)[-30:]
+                if self.research_loop is not None:
+                    self.research_loop.request_run("dep_arb_experiment")
+        synth["dep_arb_auto_applied"] = applied
+        synth["dep_arb_recent_applied"] = list(self._dep_arb_experiment_applied)
+        self._loop_synthesis_cache = synth
+        self.loops.beat("loop_synthesis")
+        return synth
 
     def _late_window_report(self) -> dict:
         """Late-window high-conviction entry mode (gate) + observe-only time-decay edge grade."""
@@ -4530,9 +4609,19 @@ class PulseEngine:
             self._bregman_projection_report = {"enabled": False}
 
         self.dep_arb_ledger.record_scan(violations)
+        from engine.pulse.dependency_arb_experiments import execute_gate
+        obs = getattr(self, "_dep_arb_mid_observer", None)
+        by_id = {w.event_id: w for w in open_w}
+        if obs is not None and self.cfg.dependency_arb_mid_convergence_observe:
+            obs.advance(open_w, now=now)
+            for v in violations:
+                if not v.actionable:
+                    continue
+                child_id = (v.child_window_keys or [None])[0]
+                obs.snap(v, parent=by_id.get(v.parent_window_key),
+                         child=by_id.get(child_id) if child_id else None, now=now)
         if not self.dep_arb_ledger.execute_enabled:
             return
-        by_id = {w.event_id: w for w in open_w}
         for v in violations:
             if not v.actionable:
                 continue
@@ -4546,6 +4635,19 @@ class PulseEngine:
             child_id = (v.child_window_keys or [None])[0]
             child = by_id.get(child_id) if child_id else None
             if parent is None or child is None:
+                continue
+            gate_ok, gate_reason = execute_gate(
+                v,
+                nested_execute_enabled=bool(self.cfg.dependency_arb_nested_execute),
+                clock_skew_enabled=bool(self.cfg.dependency_arb_clock_skew_enabled),
+                parent=parent, child=child, now=now,
+                min_parent_book_age_s=float(self.cfg.dependency_arb_min_parent_book_age_s),
+                max_child_book_age_s=float(self.cfg.dependency_arb_max_child_book_age_s),
+                max_child_window_age_s=float(self.cfg.dependency_arb_max_child_window_age_s),
+            )
+            if not gate_ok:
+                self.dep_arb_ledger.rejected_by_reason[gate_reason] = (
+                    int(self.dep_arb_ledger.rejected_by_reason.get(gate_reason, 0) or 0) + 1)
                 continue
             bdiag = bregman_by_parent.get(str(v.parent_window_key))
             wf = self._dep_arb_walk_forward()
@@ -4754,6 +4856,10 @@ class PulseEngine:
                    interval_s=self.cfg.research_interval_s, verifier="claude",
                    stop_condition="verifiable metric improvement",
                    status_fn=(lambda: self.research_loop.report()) if self.research_loop else None)
+        r.register("loop_synthesis", role="loop_engine(WS5)", trigger="per_light_report",
+                   skill="loop_synthesis.py + dependency_arb_experiments",
+                   stop_condition="evidence-gated next experiment",
+                   status_fn=lambda: getattr(self, "_loop_synthesis_cache", {}) or {})
         r.register("lessons", role="memory", trigger="per_settlement", skill="LESSONS.md",
                    status_fn=lambda: {"calls": len(self.lessons.lessons)})
 
@@ -5055,6 +5161,12 @@ class PulseEngine:
                                              if self.arb_ledger is not None else {}),
                               "dep_arb_ledger": (self.dep_arb_ledger.to_state()
                                                  if self.dep_arb_ledger is not None else {}),
+                              "dep_arb_mid_observer": (
+                                  self._dep_arb_mid_observer.to_state()
+                                  if getattr(self, "_dep_arb_mid_observer", None) is not None
+                                  else {}),
+                              "dep_arb_experiment_applied": list(
+                                  getattr(self, "_dep_arb_experiment_applied", []) or [])[-30:],
                               "allowlist_explored": self._allowlist_explored,
                               "allowlist_blocked": self._allowlist_blocked,
                               "research_avoid": sorted(self._research_avoid),

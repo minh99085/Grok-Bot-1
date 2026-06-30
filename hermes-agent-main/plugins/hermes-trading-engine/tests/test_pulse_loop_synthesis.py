@@ -68,3 +68,30 @@ def test_ranking_high_before_low():
 def test_empty_report_no_action():
     out = synthesize({})
     assert out["proposal_count"] == 0 and "keep soaking" in out["summary"]
+
+
+def test_dep_arb_low_capture_is_high_priority():
+    rep = {"dependency_arbitrage": {
+        "enabled": True, "settled": 5, "executed": 3,
+        "booking": {"settled_n": 5, "capture_ratio": 0.023, "theoretical_settled_usd": 842},
+        "experiments": {"nested_execute_enabled": False, "mid_convergence": {"by_horizon": {}}},
+        "dependency_arb_calibration": {"by_entry_bucket": {}},
+        "last_violations": [],
+    }}
+    p = [x for x in synthesize(rep)["proposals"] if x["area"] == "dependency_arb_experiments"]
+    assert p and p[0]["priority"] == P_HIGH
+    assert "capture_ratio" in p[0]["observation"]
+
+
+def test_dep_arb_mid_convergence_high_rate_proposes_mid_exit():
+    rep = {"dependency_arbitrage": {
+        "enabled": True,
+        "experiments": {
+            "nested_execute_enabled": False,
+            "mid_convergence": {"by_horizon": {"60": {"n": 15, "converged_rate": 0.62}}},
+        },
+        "booking": {}, "dependency_arb_calibration": {"by_entry_bucket": {}},
+        "last_violations": [],
+    }}
+    p = [x for x in synthesize(rep)["proposals"] if "mid-exit" in x["proposed_change"]]
+    assert p and p[0]["priority"] == P_HIGH

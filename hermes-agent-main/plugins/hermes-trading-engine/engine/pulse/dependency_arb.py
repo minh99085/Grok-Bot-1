@@ -699,9 +699,10 @@ class DependencyArbLedger:
                 "kelly_active": gate["kelly_active"],
                 "kelly_gate": gate,
                 "last_violations": self.last_violations[-20:],
+                "experiments": dict(getattr(self, "experiments_report", None) or {}),
                 "segregated_from_directional": True,
                 "note": ("LCMM nested-window scanner + optional paper execution on validated "
-                         "nested_implication violations; outcome-settled P&L + optional Kelly.")}
+                         "violations; outcome-settled P&L + optional Kelly + experiment gates.")}
 
     def to_state(self) -> dict:
         return {"execute_enabled": self.execute_enabled, "scans": self.scans,

@@ -155,6 +155,16 @@ UPDATES = {
     # WS3-B: TRUE multi-child conjunction constraint (Fréchet floor). Default OFF — flip to "1" to
     # START MEASURING it (outcome-settled) before trusting; the bound rarely binds but is real.
     "PULSE_DEPENDENCY_ARB_CONJUNCTION": "0",
+    # Dep-arb experiments (operator-authorized 2026-06-29): conjunction-only execute,
+    # clock-skew filter, mid-convergence observe-only telemetry.
+    "PULSE_DEPENDENCY_ARB_NESTED_EXECUTE": "0",
+    "PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED": "1",
+    "PULSE_DEPENDENCY_ARB_MIN_PARENT_BOOK_AGE_S": "120",
+    "PULSE_DEPENDENCY_ARB_MAX_CHILD_BOOK_AGE_S": "90",
+    "PULSE_DEPENDENCY_ARB_MAX_CHILD_WINDOW_AGE_S": "120",
+    "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_OBSERVE": "1",
+    "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_HORIZONS_S": "30,60,120",
+    "PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY": "1",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
     # WS2 (operator-authorized 2026-06-29): un-pause directional for DOWN-side data COLLECTION only.
