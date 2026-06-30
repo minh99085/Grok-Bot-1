@@ -24,7 +24,7 @@ http://<vps-ip>/webhooks/tradingview
 
 Paste your VPS `TRADINGVIEW_WEBHOOK_SECRET` into the indicator **Hermes webhook secret** input on each chart.
 
-**Dual-bot (Bot 1 + Bot 2):** add a **second** indicator instance per chart. Set **Event ID suffix** to `bot1` on Bot 1 charts and `bot2` on Bot 2 charts (avoids `duplicate_event_id` rejects). Point each alert at the correct VPS webhook URL.
+The **Event ID suffix** input (default `bot1`) tags every alert's `event_id` so IDs stay unique; leave it at the default for this standalone bot.
 
 ### Indicator toggles (recommended)
 
@@ -84,7 +84,7 @@ Quiet bar (heartbeat):
 Apply env after changes:
 
 ```bash
-python3 /opt/Grok-Bot-2/scripts/apply-loop-arch-env.py
-cd /opt/Grok-Bot-2/hermes-agent-main/plugins/hermes-trading-engine
+python3 /opt/Grok-Bot-1/scripts/apply-loop-arch-env.py
+cd /opt/Grok-Bot-1/hermes-agent-main/plugins/hermes-trading-engine
 docker compose up -d --force-recreate hermes-training
 ```

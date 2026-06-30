@@ -79,7 +79,7 @@ UPDATES = {
     "PULSE_DIRECTIONAL_EXPLORE_RATE": "0.05",   # WS2: cold-start DOWN exploration (was 0, deadlocked)
     "PULSE_MIN_EDGE": "0.008",
     "PULSE_BASIS_BUFFER": "0.008",
-    # Bot1 strategy: sweet-spot only (0.47-0.55) — tighter than Bot2 for A/B test.
+    # Strategy: sweet-spot only (0.47-0.55) entry band.
     "PULSE_MIN_ENTRY_PRICE": "0.45",
     "PULSE_MIN_REWARD_RISK": "0.50",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",

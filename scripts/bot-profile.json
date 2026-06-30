@@ -14,9 +14,5 @@
   "bundle_name": "grok-bot1-sync.bundle",
   "scheduled_task": null,
   "babysit_autopilot": false,
-  "paired_bot": {
-    "bot_id": "bot2",
-    "vps_host": "45.32.224.147",
-    "github": "https://github.com/minh99085/Grok-Bot-1"
-  }
+  "standalone": true
 }
