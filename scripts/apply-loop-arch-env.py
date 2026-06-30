@@ -158,7 +158,8 @@ UPDATES = {
     # Dep-arb experiments: nested + conjunction paper execute (operator re-enabled nested 2026-06-30),
     # clock-skew filter, mid-convergence observe-only telemetry.
     "PULSE_DEPENDENCY_ARB_NESTED_EXECUTE": "1",
-    "PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED": "1",
+    # Off: parent books refresh every tick (~15s) so min_parent_book_age_s=120 starved all fills.
+    "PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED": "0",
     "PULSE_DEPENDENCY_ARB_MIN_PARENT_BOOK_AGE_S": "120",
     "PULSE_DEPENDENCY_ARB_MAX_CHILD_BOOK_AGE_S": "90",
     "PULSE_DEPENDENCY_ARB_MAX_CHILD_WINDOW_AGE_S": "120",

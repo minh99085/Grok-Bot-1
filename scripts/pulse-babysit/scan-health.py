@@ -146,8 +146,15 @@ def main() -> int:
         issues.append(_issue(
             "nested_execute_off", "P0", "experiments.nested_execute_enabled=false",
             "set PULSE_DEPENDENCY_ARB_NESTED_EXECUTE=1; disable EXPERIMENT_AUTO_APPLY"))
-    if int(dep.get("actionable_detected") or 0) == 0 and int(dep.get("violations_detected") or 0) > 100:
-        rejects = dep.get("rejected_by_reason") or {}
+    rejects = dep.get("rejected_by_reason") or {}
+    skew_rejects = sum(int(v) for k, v in rejects.items() if str(k).startswith("clock_skew_"))
+    actionable = int(dep.get("actionable_detected") or 0)
+    if actionable > 20 and skew_rejects >= actionable * 0.8:
+        issues.append(_issue(
+            "clock_skew_starving_fills", "P0",
+            "actionable=%s clock_skew_rejects=%s rejects=%s" % (actionable, skew_rejects, rejects),
+            "set PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED=0 or lower MIN_PARENT_BOOK_AGE_S"))
+    elif actionable == 0 and int(dep.get("violations_detected") or 0) > 100:
         top = sorted(rejects.items(), key=lambda x: -int(x[1] or 0))[:3]
         issues.append(_issue(
             "dep_arb_no_actionable", "P2",
