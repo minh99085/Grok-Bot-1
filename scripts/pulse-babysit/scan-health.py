@@ -148,10 +148,13 @@ def main() -> int:
             "set PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY=0"))
     dep = status.get("dependency_arbitrage") or {}
     exp = dep.get("experiments") or {}
-    if exp.get("nested_execute_enabled") is False:
+    if exp.get("nested_execute_enabled") is True:
+        # nested_implication execution is structurally negative-EV (live capture_ratio < 0; failed
+        # walk-forward). It must stay observe-only (operator lock 2026-06-30) until the Claude dep-arb
+        # verifier proves it can veto the losing fills. Flag if anything re-enabled it.
         issues.append(_issue(
-            "nested_execute_off", "P0", "experiments.nested_execute_enabled=false",
-            "set PULSE_DEPENDENCY_ARB_NESTED_EXECUTE=1; disable EXPERIMENT_AUTO_APPLY"))
+            "nested_execute_on", "P1", "experiments.nested_execute_enabled=true",
+            "nested_implication bleeds at hold (capture<0); keep PULSE_DEPENDENCY_ARB_NESTED_EXECUTE=0"))
     rejects = dep.get("rejected_by_reason") or {}
     skew_rejects = sum(int(v) for k, v in rejects.items() if str(k).startswith("clock_skew_"))
     actionable = int(dep.get("actionable_detected") or 0)

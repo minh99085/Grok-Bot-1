@@ -152,11 +152,16 @@ UPDATES = {
     "PULSE_ARB_EPSILON_5M": "0.003",
     "PULSE_ARB_EPSILON_15M": "0.003",
     "PULSE_DEPENDENCY_ARB_EPSILON": "0.03",
-    # WS3-B: Fréchet conjunction floor — enabled alongside nested for full dep-arb architecture.
+    # WS3-B: Fréchet conjunction floor — the only dep-arb path that may EXECUTE. It is true
+    # risk-free arb (all nested children UP => parent UP), so it stays ON.
     "PULSE_DEPENDENCY_ARB_CONJUNCTION": "1",
-    # Dep-arb experiments: nested + conjunction paper execute (operator re-enabled nested 2026-06-30),
-    # clock-skew filter, mid-convergence observe-only telemetry.
-    "PULSE_DEPENDENCY_ARB_NESTED_EXECUTE": "1",
+    # Nested-implication execution is OFF (operator-authorized 2026-06-30): live capture_ratio went
+    # NEGATIVE (-0.15 on $2041 theoretical, 125 settled; walk-forward holdout PF 0.886) — the
+    # single-child heuristic books violations that mean-revert before settlement, so it bleeds at
+    # hold (the -$306 dep-arb drawdown). Nested is now observe-only (mid-convergence telemetry still
+    # records it, and the Claude dep-arb verifier stays wired for nested via CONJUNCTION_ONLY=0) so
+    # it can be re-enabled once the verifier has a proven veto track record on real outcomes.
+    "PULSE_DEPENDENCY_ARB_NESTED_EXECUTE": "0",
     # Off: parent books refresh every tick (~15s) so min_parent_book_age_s=120 starved all fills.
     "PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED": "0",
     "PULSE_DEPENDENCY_ARB_MIN_PARENT_BOOK_AGE_S": "120",
