@@ -130,9 +130,37 @@ def main() -> int:
     record("rtds_connected", rt.get("connected") is True)
 
     stop = status.get("stop_conditions") or {}
-    if stop.get("any_halted"):
+    dep_stop = (stop.get("strategies") or {}).get("dependency_arbitrage") or {}
+    if dep_stop.get("halted"):
+        issues.append(_issue(
+            "dep_arb_halted", "P0",
+            "reasons=%s metrics=%s" % (dep_stop.get("reasons"), dep_stop.get("metrics")),
+            "set PULSE_STOP_DEP_ARB_GUARD_ENABLED=0 for paper soak or fix capture_ratio"))
+    elif stop.get("any_halted"):
         issues.append(_issue("strategy_halted", "P0", str(stop.get("stalled") or stop),
                              "inspect stop_conditions"))
+
+    dep = status.get("dependency_arbitrage") or {}
+    exp = dep.get("experiments") or {}
+    if exp.get("nested_execute_enabled") is False:
+        issues.append(_issue(
+            "nested_execute_off", "P0", "experiments.nested_execute_enabled=false",
+            "set PULSE_DEPENDENCY_ARB_NESTED_EXECUTE=1; disable EXPERIMENT_AUTO_APPLY"))
+    rejects = dep.get("rejected_by_reason") or {}
+    skew_rejects = sum(int(v) for k, v in rejects.items() if str(k).startswith("clock_skew_"))
+    actionable = int(dep.get("actionable_detected") or 0)
+    if actionable > 20 and skew_rejects >= actionable * 0.8:
+        issues.append(_issue(
+            "clock_skew_starving_fills", "P0",
+            "actionable=%s clock_skew_rejects=%s rejects=%s" % (actionable, skew_rejects, rejects),
+            "set PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED=0 or lower MIN_PARENT_BOOK_AGE_S"))
+    elif actionable == 0 and int(dep.get("violations_detected") or 0) > 100:
+        top = sorted(rejects.items(), key=lambda x: -int(x[1] or 0))[:3]
+        issues.append(_issue(
+            "dep_arb_no_actionable", "P2",
+            "violations=%s actionable=0 top_rejects=%s" % (
+                dep.get("violations_detected"), top),
+            "check clock_skew, epsilon, bucket_bleeding, conjunction"))
 
     coupling = status.get("config_coupling") or {}
     if coupling.get("active"):

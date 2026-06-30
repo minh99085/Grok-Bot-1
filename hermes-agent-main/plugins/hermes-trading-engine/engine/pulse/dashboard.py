@@ -6,7 +6,7 @@ DASHBOARD_HTML = r"""<!doctype html>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <meta name="color-scheme" content="dark"/>
-<title>BTC Pulse · Dep-Arb</title>
+<title>BTC Pulse · Bot 1 Dashboard</title>
 <style>
 :root{
   --bg:#12141a;--bg2:#181b24;--card:#1c2029;--line:#2a3040;
@@ -25,7 +25,7 @@ h1{font-size:34px;font-weight:600;margin:0}
 .tag.live{color:var(--green)}.tag.warn{color:var(--yellow)}.tag.off{color:var(--red)}
 main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
 .cap-bar{
-  display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 20px;
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 24px;
   background:linear-gradient(135deg,var(--card) 0%,#222836 100%);
   border:1px solid var(--line);border-radius:var(--radius);
   padding:16px 20px;margin-bottom:12px;
@@ -48,11 +48,27 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
   margin-bottom:12px;
 }
 .content-split{
-  display:grid;grid-template-columns:1fr 420px;gap:12px 24px;align-items:start;
+  display:grid;grid-template-columns:1fr 440px;gap:12px 24px;align-items:start;
 }
-.trades-head{
-  margin:0 0 8px;font-size:20px;font-weight:600;color:var(--accent);
-  text-transform:uppercase;letter-spacing:.06em;
+.trades-toggle{
+  width:100%;text-align:left;cursor:pointer;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 14px;margin:0 0 8px;
+  font-size:24px;font-weight:600;color:var(--accent);
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  color:var(--text);
+}
+.trades-toggle:hover{border-color:var(--accent)}
+.trades-toggle .chev{font-size:22px;color:var(--accent);transition:transform .2s}
+.trades-toggle.open .chev{transform:rotate(90deg)}
+.trades-toggle-sub{font-size:20px;font-weight:400;color:var(--text2)}
+.trades-panel{
+  max-height:0;overflow:hidden;transition:max-height .35s ease;
+  border:1px solid transparent;border-radius:var(--radius);
+}
+.trades-panel.open{
+  max-height:min(70vh,1200px);overflow-y:auto;
+  border-color:var(--line);background:var(--card);padding:8px 12px;
 }
 .trade-line{
   display:flex;justify-content:space-between;align-items:center;gap:10px;
@@ -66,7 +82,7 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
 .trade-tag.win{color:var(--green)}.trade-tag.loss{color:var(--red)}.trade-tag.open{color:var(--yellow)}
 .trade-pnl{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;font-size:22px}
 .trade-pnl.up{color:var(--green)}.trade-pnl.dn{color:var(--red)}.trade-pnl.neu{color:var(--text2)}
-.trades-empty{color:var(--text2);font-size:22px}
+.trades-empty{color:var(--text2);font-size:22px;padding:8px 4px}
 .tl-grid{
   display:grid;grid-template-columns:repeat(auto-fill,minmax(456px,1fr));gap:8px;min-width:0;
 }
@@ -95,8 +111,8 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
 </head>
 <body>
 <header>
-  <h1>Dep-Arb Lab</h1>
-  <span class="tag">Paper only</span>
+  <h1>Bot 1 · Paper Trading</h1>
+  <span class="tag">Practice money only</span>
   <span class="tag" id="health">Loading…</span>
   <span class="tag" id="meta" style="color:var(--text3)"></span>
 </header>
@@ -107,18 +123,27 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
   <div class="content-split">
     <div class="tl-grid" id="tl-grid"></div>
     <aside class="trades-col">
-      <div class="trades-head">Last 20 dep-arb trades</div>
-      <div id="trades-list"></div>
+      <button type="button" class="trades-toggle" id="trades-toggle" aria-expanded="false">
+        <span><span id="trades-toggle-title">Recent trades</span>
+        <span class="trades-toggle-sub" id="trades-toggle-sub"></span></span>
+        <span class="chev">▶</span>
+      </button>
+      <div class="trades-panel" id="trades-panel">
+        <div id="trades-list"></div>
+      </div>
     </aside>
   </div>
-  <div class="foot">Refreshes every 1 min · dependency-arb lane only · outcome-settled P&L</div>
+  <div class="foot">Updates every minute · dependency-arbitrage (parent UP) lane · no real money</div>
 </main>
 <script>
+const TRADE_LIMIT=50;
 const $=(h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild};
 const f=(x,d=2)=>x==null||x===''?'—':(typeof x==='number'?x.toFixed(d):String(x));
 const usd=(x)=>x==null?'—':'$'+Number(x).toFixed(2);
 const pct=(x)=>x==null?'—':(x>=0?'+':'')+Number(x).toFixed(2)+'%';
 const dot=(c)=>'<span class="tl-dot tl-'+c+'"></span>';
+
+let tradesOpen=false;
 
 function fmtTsShort(ts){
   if(ts==null)return '—';
@@ -131,49 +156,79 @@ function fmtAge(sec){
   if(sec==null)return '—';
   const s=Math.round(Number(sec));
   if(!Number.isFinite(s)||s<0)return '—';
-  if(s<60)return s+'s';
-  if(s<3600)return Math.floor(s/60)+'m';
-  return Math.floor(s/3600)+'h';
+  if(s<60)return s+' seconds ago';
+  if(s<3600)return Math.floor(s/60)+' min ago';
+  return Math.floor(s/3600)+' hr ago';
 }
 function tradeOutcome(x){
   const st=(x.status||'').toLowerCase();
-  if(st==='open')return {label:'open',cls:'open',pnlCls:'neu',pnl:'—'};
-  if(x.won===true)return {label:'win',cls:'win',pnlCls:'up',pnl:usd(x.pnl_usd)};
-  if(x.won===false)return {label:'loss',cls:'loss',pnlCls:'dn',pnl:usd(x.pnl_usd)};
+  if(st==='open')return {label:'still open',cls:'open',pnlCls:'neu',pnl:'—'};
+  if(x.won===true)return {label:'won',cls:'win',pnlCls:'up',pnl:usd(x.pnl_usd)};
+  if(x.won===false)return {label:'lost',cls:'loss',pnlCls:'dn',pnl:usd(x.pnl_usd)};
   return {label:st||'—',cls:'',pnlCls:'neu',pnl:x.pnl_usd==null?'—':usd(x.pnl_usd)};
 }
 function renderTrades(listEl,positions){
   listEl.innerHTML='';
-  const pos=(positions||[]).slice(0,20);
+  const pos=(positions||[]).slice(0,TRADE_LIMIT);
   if(!pos.length){
-    listEl.innerHTML='<div class="trades-empty">No dep-arb trades yet.</div>';
+    listEl.innerHTML='<div class="trades-empty">No dependency-arbitrage trades yet.</div>';
     return;
   }
   pos.forEach(x=>{
     const r=x.research||{};
     const oc=tradeOutcome(x);
-    const settled=x.outcome_settled?' · settled':'';
+    const settled=x.outcome_settled?' · final result known':'';
     const row=$('<div class="trade-line"></div>');
     row.innerHTML=
-      '<div class="trade-info"><span class="trade-side">'+(x.side||'P-UP')+'</span>'
+      '<div class="trade-info"><span class="trade-side">'+(x.side||'Parent UP')+'</span>'
       +'<span class="trade-tag '+oc.cls+'">'+oc.label+'</span>'
-      +'<span class="trade-tag"> '+r.market_series+' @'+f(x.entry_price,3)+settled+'</span>'
+      +'<span class="trade-tag"> '+r.market_series+' · entry '+f(x.entry_price,3)+settled+'</span>'
       +'<br><span class="trade-tag">'+fmtTsShort(x.entry_ts)+'</span></div>'
       +'<div class="trade-pnl '+oc.pnlCls+'">'+oc.pnl+'</div>';
     listEl.appendChild(row);
   });
 }
-function renderStats(el,st){
+function setupTradesToggle(count){
+  const btn=document.getElementById('trades-toggle');
+  const panel=document.getElementById('trades-panel');
+  const sub=document.getElementById('trades-toggle-sub');
+  const title=document.getElementById('trades-toggle-title');
+  const shown=Math.min(count,TRADE_LIMIT);
+  title.textContent='Recent trades (up to '+TRADE_LIMIT+')';
+  sub.textContent=' — '+count+' total · click to '+(tradesOpen?'hide':'show')+' list';
+  btn.classList.toggle('open',tradesOpen);
+  panel.classList.toggle('open',tradesOpen);
+  btn.setAttribute('aria-expanded',tradesOpen?'true':'false');
+  if(!btn._wired){
+    btn._wired=true;
+    btn.addEventListener('click',()=>{
+      tradesOpen=!tradesOpen;
+      setupTradesToggle(count);
+    });
+  }
+}
+function renderStats(el,st,dep){
   st=st||{};
+  dep=dep||{};
   el.innerHTML=
-    '<span class="stat">Total <b>'+f(st.total,0)+'</b></span>'
+    '<span class="stat">All dep-arb trades <b>'+f(st.total,0)+'</b></span>'
     +'<span class="stat">Wins <b class="w">'+f(st.wins,0)+'</b></span>'
     +'<span class="stat">Losses <b class="l">'+f(st.losses,0)+'</b></span>'
-    +'<span class="stat">Open <b class="o">'+f(st.open,0)+'</b></span>'
-    +'<span class="stat">Settled <b>'+f(st.settled,0)+'</b></span>';
+    +'<span class="stat">Still open <b class="o">'+f(st.open,0)+'</b></span>'
+    +'<span class="stat">Finished <b>'+f(st.settled,0)+'</b></span>'
+    +'<span class="stat">Booked by bot <b>'+f(dep.executed,0)+'</b></span>';
 }
 function addRow(rows,name,val,hint,light){rows.push({name,val,hint,light});}
 function addSection(rows,title){rows.push({section:title});}
+
+function captureLight(ratio){
+  if(ratio==null||ratio==='')return 'yellow';
+  const r=Number(ratio);
+  if(r<0)return 'red';
+  if(r>=0.4)return 'green';
+  if(r>=0.1)return 'yellow';
+  return 'red';
+}
 
 function buildRows(s){
   const rows=[];
@@ -182,73 +237,81 @@ function buildRows(s){
   const gate=dep.kelly_gate||{};
   const book=dep.booking||{};
   const loops=s.loops||{};
+  const cap=s.capital||{};
   const statusAge=(Date.now()/1000)-(Number(s.ts)||0);
   const pnl=dep.realized_profit_usd||0;
-  const wr=dep.settled>0?((gate.warm_buckets||0)>0?'see calibration':'—'):'—';
 
-  addSection(rows,'Dep-Arb P&L');
-  addRow(rows,'Realized P&L',usd(pnl),
-    'Outcome-settled when resolver available',
+  addSection(rows,'Money — dependency arbitrage');
+  addRow(rows,'Dep-arb profit/loss',usd(pnl),
+    'Real money-style P&amp;L after each trade finishes (not guesses).',
     pnl>0?'green':(pnl>=0?'yellow':'red'));
-  addRow(rows,'Theoretical booked',usd(book.theoretical_settled_usd),
-    'Capture ratio '+f(book.capture_ratio,2),
-    (book.capture_ratio||0)>=0.4?'green':'yellow');
-  addRow(rows,'Heuristic compare',book.settled_n?f(book.settled_n,0)+' settled':'—',
-    'Legacy capped heuristic kept for comparison',
+  addRow(rows,'What we hoped to make',usd(book.theoretical_settled_usd),
+    'Best-case if every gap paid off fully. Capture = what we actually kept: '+f(book.capture_ratio,2),
+    captureLight(book.capture_ratio));
+  addRow(rows,'Finished trades counted',book.settled_n?f(book.settled_n,0)+' settled':'—',
+    'Older estimate kept for comparison only.',
     'yellow');
 
-  addSection(rows,'Activity');
-  addRow(rows,'Executed',f(dep.executed,0)+' · settled '+f(dep.settled,0),
-    'open '+f(dep.open,0)+' · scans '+f(dep.scans,0),
+  addSection(rows,'Scanner activity');
+  addRow(rows,'Trades placed',f(dep.executed,0)+' placed · '+f(dep.settled,0)+' finished',
+    f(dep.open,0)+' still open · '+f(dep.scans,0)+' market scans',
     (dep.executed||0)>0?'green':'yellow');
-  addRow(rows,'Violations',f(dep.violations_detected,0)+' detected',
-    f(dep.actionable_detected,0)+' actionable · '+f(dep.mid_only_violations,0)+' mid-only',
+  addRow(rows,'Price gaps found',f(dep.violations_detected,0)+' gaps spotted',
+    f(dep.actionable_detected,0)+' looked tradable · '+f(dep.mid_only_violations,0)+' watch-only',
     (dep.actionable_detected||0)>0?'green':'yellow');
-  addRow(rows,'Mode',dep.mode||'—',
-    dep.enabled?'execute ON':'log only',
+  addRow(rows,'Trading switch',dep.enabled?'ON — bot may place paper trades':'OFF — watch only',
+    dep.mode==='paper_execute'?'Paper practice mode':'Log only',
     dep.enabled?'green':'yellow');
 
-  addSection(rows,'Kelly & calibration');
-  addRow(rows,'Kelly active',dep.kelly_active?'YES':'no',
-    'enabled '+!!gate.kelly_enabled+' · fraction '+f(gate.kelly_fraction,2),
+  addSection(rows,'Sizing rules (Kelly)');
+  addRow(rows,'Smart sizing active?',dep.kelly_active?'Yes':'No',
+    'Kelly only turns on when enough history exists. Fraction '+f(gate.kelly_fraction,2),
     dep.kelly_active?'green':'yellow');
-  addRow(rows,'Walk-forward',gate.walk_forward_passed?'passed':'blocked',
-    (gate.walk_forward||{}).holdout?'holdout n='+f(((gate.walk_forward||{}).holdout||{}).n,0):'warming up',
+  addRow(rows,'Out-of-sample test',gate.walk_forward_passed?'Passed':'Not yet',
+    (gate.walk_forward||{}).holdout?'test sample size '+f(((gate.walk_forward||{}).holdout||{}).n,0):'still collecting data',
     gate.walk_forward_passed?'green':'yellow');
   const buckets=cal.buckets||{};
   const bucketKeys=Object.keys(buckets);
   if(bucketKeys.length){
     bucketKeys.slice(0,4).forEach(k=>{
       const b=buckets[k]||{};
-      addRow(rows,'Bucket '+k,f(b.win_rate!=null?(b.win_rate*100).toFixed(1)+'%':'—'),
-        'n='+f(b.n,0)+' · PF '+f(b.profit_factor,2)+' · avg '+usd(b.avg_pnl),
+      addRow(rows,'Entry price '+k,f(b.win_rate!=null?(b.win_rate*100).toFixed(1)+'% win rate':'—'),
+        f(b.n,0)+' trades · profit factor '+f(b.profit_factor,2)+' · avg '+usd(b.avg_pnl),
         (b.profit_factor||0)>=1?'green':'yellow');
     });
   }else{
-    addRow(rows,'Calibration','no buckets yet',
-      'min samples '+f(cal.min_samples_kelly,0)+' for Kelly',
+    addRow(rows,'Win rate by entry price','Not enough data yet',
+      'Need '+f(cal.min_samples_kelly,0)+' finished trades before Kelly sizing',
       'yellow');
   }
 
-  addSection(rows,'Engine');
-  addRow(rows,'Bot alive','ticks '+f(s.ticks,0)+' · age '+fmtAge(statusAge),
-    s.paper_only?'paper mode OK':'CHECK MODE',
+  addSection(rows,'Bot health');
+  addRow(rows,'Is the bot running?','Heartbeat '+f(s.ticks,0)+' · updated '+fmtAge(statusAge),
+    s.paper_only?'Practice mode — safe':'WARNING: check live flag',
     statusAge<45&&s.ticks>5?'green':(statusAge<120?'yellow':'red'));
-  addRow(rows,'Loops',loops.all_live?'all live':'check',
-    f((loops.stalled||[]).length,0)+' stalled',
+  addRow(rows,'Background jobs',loops.all_live?'All loops OK':'Some loops stalled',
+    f((loops.stalled||[]).length,0)+' need attention',
     (loops.stalled||[]).length===0?'green':'red');
+  if(cap.total_realized_pnl_usd!=null){
+    addRow(rows,'Whole-bot P&amp;L (all strategies)',usd(cap.total_realized_pnl_usd),
+      'Dep-arb + dutch-book arb + directional combined',
+      cap.total_realized_pnl_usd>=0?'green':'yellow');
+  }
 
   return rows;
 }
 
-function overallLight(s,rows){
+function overallLight(s){
   const dep=s.dependency_arbitrage||{};
+  const cap=s.capital||{};
   const pnl=dep.realized_profit_usd||0;
-  if(!s.available)return {light:'red',text:'NO DATA'};
-  if(s.live_trading_enabled)return {light:'red',text:'LIVE TRADING ON'};
-  if((dep.executed||0)===0)return {light:'yellow',text:'WAITING FOR DEP-ARB TRADES'};
-  if(pnl<0)return {light:'yellow',text:'DEP-ARB NEGATIVE P&L'};
-  return {light:'green',text:'DEP-ARB ACTIVE'};
+  const total=cap.total_on_hand_usd;
+  if(!s.available)return {light:'red',text:'No data — bot may be stopped'};
+  if(s.live_trading_enabled)return {light:'red',text:'WARNING: live trading is ON'};
+  if((dep.executed||0)===0)return {light:'yellow',text:'Watching markets — no dep-arb trades placed yet'};
+  if(pnl<0)return {light:'yellow',text:'Dep-arb is losing money so far — review capture and exits'};
+  if(total!=null&&total<cap.starting_capital_usd)return {light:'yellow',text:'Total paper wallet is below starting capital'};
+  return {light:'green',text:'Dep-arb is active and making paper trades'};
 }
 
 function renderRows(grid,rows){
@@ -290,33 +353,43 @@ async function tick(){
       fetchJson('/api/polymarket/training/btc_pulse'),
       fetchJson('/api/polymarket/training/btc_pulse/ledger?summary=1'),
     ]);
-  }catch(e){setTag('health',e&&e.name==='AbortError'?'Timed out':'Unreachable','off');return;}
+  }catch(e){setTag('health',e&&e.name==='AbortError'?'Timed out':'Cannot reach bot','off');return;}
   if(!s.available){setTag('health','No data','off');return;}
-  setTag('health','Live','live');
+  setTag('health','Connected','live');
   document.getElementById('meta').textContent=
-    'tick · '+new Date().toLocaleTimeString();
+    'Last refresh · '+new Date().toLocaleTimeString();
 
   const dep=s.dependency_arbitrage||{};
-  const pnl=dep.realized_profit_usd||0;
-  const pnlCls=pnl>=0?'up':'dn';
+  const cap=s.capital||{};
   const st=(l&&l.dep_arb_stats)||{};
-  document.getElementById('cap-bar').innerHTML=
-    '<div><div class="cap-main '+pnlCls+'">'+usd(pnl)+'</div>'
-    +'<div class="cap-label">dep-arb realized P&L (outcome-settled)</div></div>'
-    +'<div class="cap-sub">Executed <b>'+f(dep.executed,0)+'</b></div>'
-    +'<div class="cap-sub">Settled <b>'+f(dep.settled,0)+'</b></div>'
-    +'<div class="cap-sub">Open <b class="o">'+f(dep.open,0)+'</b></div>'
-    +'<div class="cap-sub">Kelly <b>'+(dep.kelly_active?'active':'off')+'</b></div>';
+  const totalCap=cap.total_on_hand_usd;
+  const startCap=cap.starting_capital_usd;
+  const totalRet=cap.total_return_pct;
+  const depPnl=dep.realized_profit_usd||0;
+  const capCls=(totalCap==null)?'':(totalCap>=startCap?'up':'dn');
+  const depCls=depPnl>=0?'up':'dn';
 
-  renderStats(document.getElementById('stats-bar'),st);
+  document.getElementById('cap-bar').innerHTML=
+    '<div><div class="cap-main '+capCls+'">'+usd(totalCap)+'</div>'
+    +'<div class="cap-label">Total paper capital (all strategies)</div>'
+    +(startCap!=null?'<div class="cap-label">Started with '+usd(startCap)
+      +(totalRet!=null?' · '+pct(totalRet)+' overall':'')+'</div>':'')+'</div>'
+    +'<div><div class="cap-main" style="font-size:32px">'+f(st.total,0)+'</div>'
+    +'<div class="cap-label">Total dep-arb trades</div></div>'
+    +'<div class="cap-sub">Dep-arb P&amp;L <b class="'+depCls+'">'+usd(depPnl)+'</b></div>'
+    +'<div class="cap-sub">Finished <b>'+f(dep.settled,0)+'</b></div>'
+    +'<div class="cap-sub">Still open <b class="o">'+f(dep.open,0)+'</b></div>';
+
+  renderStats(document.getElementById('stats-bar'),st,dep);
 
   const rows=buildRows(s);
-  const ov=overallLight(s,rows);
+  const ov=overallLight(s);
   const v=document.getElementById('verdict');
   v.innerHTML=dot(ov.light)+'<span>'+ov.text+'</span>';
   v.style.borderColor=ov.light==='green'?'rgba(74,222,128,.4)':(ov.light==='yellow'?'rgba(250,204,21,.4)':'rgba(248,113,113,.4)');
   renderRows(document.getElementById('tl-grid'),rows);
   renderTrades(document.getElementById('trades-list'),(l&&l.positions)||[]);
+  setupTradesToggle(st.total||0);
 }
 tick();setInterval(tick,60000);
 </script>

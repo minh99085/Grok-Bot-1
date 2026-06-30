@@ -44,29 +44,57 @@ def parse_grok_dependency_response(raw: str) -> list[dict]:
 def proposal_to_violation(proposal: dict, *, windows_by_id: dict) -> Optional[DependencyViolation]:
     """Convert one Grok proposal into a DependencyViolation if windows exist."""
     ctype = str(proposal.get("constraint_type") or proposal.get("type") or "")
-    if ctype not in ("nested_implication",):
+    if ctype not in ("nested_implication", "conjunction_implication"):
         return None
     pid = str(proposal.get("parent_window_key") or proposal.get("parent_id") or "")
     cids = proposal.get("child_window_keys") or proposal.get("child_ids") or []
     if not pid or not cids:
         return None
     parent = windows_by_id.get(pid)
-    child = windows_by_id.get(str(cids[0]))
-    if parent is None or child is None:
+    if parent is None:
         return None
     p_mid = getattr(getattr(parent, "up_book", None), "mid", None)
-    c_mid = getattr(getattr(child, "up_book", None), "mid", None)
-    if p_mid is None or c_mid is None:
+    if p_mid is None:
         return None
-    mag = float(c_mid) - float(p_mid)
+    child_keys: list[str] = []
+    child_mids: list[float] = []
+    for cid in cids:
+        child = windows_by_id.get(str(cid))
+        if child is None:
+            continue
+        c_mid = getattr(getattr(child, "up_book", None), "mid", None)
+        if c_mid is None:
+            continue
+        child_keys.append(str(cid))
+        child_mids.append(round(float(c_mid), 6))
+    if not child_keys:
+        return None
+    if ctype == "conjunction_implication":
+        if len(child_mids) < 2:
+            return None
+        floor = sum(child_mids) - (len(child_mids) - 1)
+        mag = float(floor) - float(p_mid)
+        return DependencyViolation(
+            constraint_type="conjunction_implication",
+            parent_window_key=pid,
+            child_window_keys=child_keys,
+            description=str(proposal.get("description") or "grok_proposed_conjunction"),
+            parent_up_mid=round(float(p_mid), 6),
+            child_up_mids=child_mids,
+            implied_bound=round(float(floor), 6),
+            violation_magnitude=round(mag, 6),
+            actionable=False,
+            reason="grok_proposal_unvalidated",
+        )
+    mag = float(child_mids[0]) - float(p_mid)
     return DependencyViolation(
         constraint_type="nested_implication",
         parent_window_key=pid,
-        child_window_keys=[str(cids[0])],
+        child_window_keys=[child_keys[0]],
         description=str(proposal.get("description") or "grok_proposed_nested_implication"),
         parent_up_mid=round(float(p_mid), 6),
-        child_up_mids=[round(float(c_mid), 6)],
-        implied_bound=round(float(c_mid), 6),
+        child_up_mids=[child_mids[0]],
+        implied_bound=round(float(child_mids[0]), 6),
         violation_magnitude=round(mag, 6),
         actionable=False,
         reason="grok_proposal_unvalidated",
@@ -100,9 +128,14 @@ def validate_grok_proposals(
 
 GROK_DEPENDENCY_PROMPT = """You are a Polymarket dependency screener (ADVISORY ONLY).
 Given BTC/ETH up/down window titles and ids, propose ONLY machine-checkable linear constraints.
-Output JSON: {"proposals": [{"constraint_type": "nested_implication", "parent_window_key": "...",
-"child_window_keys": ["..."], "description": "..."}]}
-Rules: nested_implication only when a shorter window is logically nested inside a longer window.
+Output JSON: {"proposals": [{"constraint_type": "nested_implication|conjunction_implication",
+"parent_window_key": "...", "child_window_keys": ["..."], "description": "..."}]}
+Rules:
+- nested_implication: one shorter window nested inside a longer parent (single child).
+- conjunction_implication: TWO OR MORE nested children under the same parent (TRUE Fréchet floor).
+Prefer conjunction_implication when multiple same-series children overlap the parent.
+Use up_mid in the input to spot when parent UP is below a child's UP (nested gap) or below the
+Fréchet floor (conjunction). Only propose when the economic bound could bind.
 Do NOT propose trades. Do NOT invent window ids not in the input list."""
 
 
@@ -112,6 +145,7 @@ def _build_dependency_prompt(windows: list) -> str:
         eid = str(getattr(w, "event_id", "") or "")
         if not eid:
             continue
+        up_mid = getattr(getattr(w, "up_book", None), "mid", None)
         rows.append({
             "event_id": eid,
             "title": str(getattr(w, "title", "") or "")[:120],
@@ -119,6 +153,7 @@ def _build_dependency_prompt(windows: list) -> str:
             "window_seconds": int(getattr(w, "window_seconds", 0) or 0),
             "open_ts": float(getattr(w, "open_ts", 0) or 0),
             "close_ts": float(getattr(w, "close_ts", 0) or 0),
+            "up_mid": round(float(up_mid), 4) if up_mid is not None else None,
         })
     if not rows:
         return ""

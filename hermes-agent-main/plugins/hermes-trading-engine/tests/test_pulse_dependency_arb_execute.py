@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from engine.pulse.markets import OrderBook, PulseWindow
 from engine.pulse.dependency_arb import (
+    DependencyArbCalibration,
     DependencyArbLedger,
     DependencyViolation,
+    dep_arb_bucket_bleeding,
     enrich_vwap_actionable,
     realized_dependency_profit_usd,
     validate_violation,
@@ -159,3 +161,15 @@ def test_execute_disabled_does_not_book():
     trade = {"parent_window_key": "x", "close_ts": 1.0, "expected_profit_usd": 1.0}
     assert ledger.book(trade, now=0.0) is False
     assert ledger.executed == 0
+
+
+def test_dep_arb_bucket_bleeding_halts_losing_bucket():
+    cal = DependencyArbCalibration()
+    for _ in range(5):
+        cal.record_settled(0.40, -10.0, False)
+    halted, reason = dep_arb_bucket_bleeding(0.40, cal)
+    assert halted is True and "0.35-0.50" in reason
+    cal2 = DependencyArbCalibration()
+    for _ in range(5):
+        cal2.record_settled(0.40, 5.0, True)
+    assert dep_arb_bucket_bleeding(0.40, cal2)[0] is False

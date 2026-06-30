@@ -177,7 +177,14 @@ def evaluate_dependency_arb(*, dep_positions, dep_report: dict, cfg: StopConfig)
     wf = passes_walk_forward(pos_list, min_holdout_n=5, min_holdout_pf=1.0)
     booking = rep.get("booking") or {}
     reasons = []
-    if cfg.dep_arb_guard_enabled and int(rep.get("settled") or 0) > 0:
+    exp = rep.get("experiments") or {}
+    mid_exit_on = bool(exp.get("mid_exit_enabled"))
+    h60 = ((exp.get("mid_convergence") or {}).get("by_horizon") or {}).get("60") or {}
+    mid_exit_recovery = (
+        mid_exit_on
+        and int(h60.get("n") or 0) >= 5
+        and float(h60.get("converged_rate") or 0) >= 0.5)
+    if cfg.dep_arb_guard_enabled and not mid_exit_recovery and int(rep.get("settled") or 0) > 0:
         realized = float(booking.get("realized_settled_usd")
                          or rep.get("realized_profit_usd") or 0)
         if realized < 0:

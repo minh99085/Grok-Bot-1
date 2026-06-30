@@ -141,6 +141,8 @@ class PulseConfig:
     # FOLLOW trades wait for the actual Claude verdict (fail-CLOSED on pending) so the maker-checker
     # genuinely gates them rather than fail-opening before the async worker finishes.
     verifier_follow_require_verdict: bool = True
+    verifier_explore_approve: bool = False   # WS2: shrunk approve over veto for exploration trades
+    verifier_explore_max_size_fraction: float = 0.5
     verifier_max_calls_per_hour: int = 120
     research_loop_enabled: bool = False
     research_interval_s: float = 1800.0      # idle FLOOR; the loop is mainly EVENT-triggered
@@ -274,9 +276,22 @@ class PulseConfig:
     dependency_arb_execute_enabled: bool = False  # paper execute validated violations (WS4)
     dependency_arb_max_usd: float = 50.0
     dependency_arb_epsilon: float = 0.02        # LCMM violation floor (separate from dutch-book eps)
+    dependency_arb_conjunction_enabled: bool = False  # WS3-B: TRUE multi-child Fréchet floor (default OFF)
     dependency_arb_kelly_enabled: bool = False  # edge-proportional sizing (Lever C; default OFF)
     dependency_arb_kelly_fraction: float = 0.25  # quarter-Kelly cap multiplier
     dependency_arb_kelly_depth_frac: float = 0.5  # cap size at this frac of ask depth
+    # Dep-arb experiments (paper-only): conjunction-only execute, clock-skew, mid-convergence observe
+    dependency_arb_nested_execute: bool = True
+    dependency_arb_clock_skew_enabled: bool = False
+    dependency_arb_min_parent_book_age_s: float = 120.0
+    dependency_arb_max_child_book_age_s: float = 90.0
+    dependency_arb_max_child_window_age_s: float = 120.0
+    dependency_arb_mid_convergence_observe: bool = True
+    dependency_arb_mid_convergence_horizons_s: tuple = (30.0, 60.0, 120.0)
+    dependency_arb_experiment_auto_apply: bool = True
+    dependency_arb_mid_exit_enabled: bool = False
+    dependency_arb_mid_exit_horizon_s: float = 60.0
+    dependency_arb_max_entry_vwap: float = 0.52
     bregman_projection_enabled: bool = False  # WS4 Layer 2 diagnostics
     bregman_trade_authority: bool = False     # Bregman sizes Lane B when True
     bregman_alpha: float = 0.9
@@ -289,6 +304,15 @@ class PulseConfig:
     stop_sharpe_min_samples: int = 20
     grok_dependency_enabled: bool = False       # advisory dependency screener (shadow)
     grok_dependency_interval_s: float = 180.0
+    grok_dep_convergence_enabled: bool = False
+    grok_dep_convergence_gate_enabled: bool = False
+    grok_dep_convergence_min_converge_60s: float = 0.35
+    grok_dep_convergence_max_calls_per_hour: int = 30
+    dep_arb_verifier_enabled: bool = True       # Claude maker-checker on conjunction binds
+    dep_arb_verifier_conjunction_only: bool = True
+    dep_arb_verifier_fail_open: bool = True
+    dep_arb_verifier_require_verdict: bool = False
+    dep_arb_verifier_max_calls_per_hour: int = 40
     eth_series_enabled: bool = False            # append ETH 5m/15m slugs when listed
     sizing_promotion_gated: bool = True       # Kelly only on promoted buckets (WS3)
     # ---- Learned Selectivity Gate v1 (between decision and execution; PAPER ONLY) ----
@@ -365,6 +389,7 @@ class PulseConfig:
     stop_min_samples: int = 30
     stop_min_profit_factor: float = 0.85
     stop_max_drawdown_pct: float = 25.0
+    stop_dep_arb_guard_enabled: bool = True
     # ---- Late-window high-conviction entry mode (time-decay edge; PAPER ONLY) ----
     # When enabled, only late-window AND high-conviction setups may trade (restrict-only). The edge
     # is ALWAYS measured observe-only (cohort vs other) so it can be graded before being enabled.
@@ -525,6 +550,10 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             verifier_follow_require_verdict=str(os.getenv("PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
+            verifier_explore_approve=str(os.getenv("PULSE_VERIFIER_EXPLORE_APPROVE", "0"))
+            .strip().lower() in ("1", "true", "yes", "on"),
+            verifier_explore_max_size_fraction=_envf(
+                "PULSE_VERIFIER_EXPLORE_MAX_SIZE_FRACTION", 0.5),
             verifier_max_calls_per_hour=int(_envf("PULSE_VERIFIER_MAX_CALLS_PER_HOUR", 120)),
             research_loop_enabled=str(os.getenv("PULSE_RESEARCH_LOOP_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
@@ -698,11 +727,43 @@ class PulseConfig:
             .strip().lower() in ("1", "true", "yes", "on"),
             dependency_arb_max_usd=_envf("PULSE_DEPENDENCY_ARB_MAX_USD", 50.0),
             dependency_arb_epsilon=_envf("PULSE_DEPENDENCY_ARB_EPSILON", 0.02),
+            dependency_arb_conjunction_enabled=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_CONJUNCTION", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
             dependency_arb_kelly_enabled=str(
                 os.getenv("PULSE_DEPENDENCY_ARB_KELLY", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
             dependency_arb_kelly_fraction=_envf("PULSE_DEPENDENCY_ARB_KELLY_FRACTION", 0.25),
             dependency_arb_kelly_depth_frac=_envf("PULSE_DEPENDENCY_ARB_KELLY_DEPTH_FRAC", 0.5),
+            dependency_arb_nested_execute=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_NESTED_EXECUTE", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_clock_skew_enabled=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_min_parent_book_age_s=_envf(
+                "PULSE_DEPENDENCY_ARB_MIN_PARENT_BOOK_AGE_S", 120.0),
+            dependency_arb_max_child_book_age_s=_envf(
+                "PULSE_DEPENDENCY_ARB_MAX_CHILD_BOOK_AGE_S", 90.0),
+            dependency_arb_max_child_window_age_s=_envf(
+                "PULSE_DEPENDENCY_ARB_MAX_CHILD_WINDOW_AGE_S", 120.0),
+            dependency_arb_mid_convergence_observe=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_OBSERVE", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_mid_convergence_horizons_s=tuple(
+                float(x.strip()) for x in str(
+                    os.getenv("PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_HORIZONS_S", "30,60,120")
+                ).split(",") if x.strip()),
+            dependency_arb_experiment_auto_apply=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_mid_exit_enabled=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_mid_exit_horizon_s=_envf(
+                "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S", 60.0),
+            dependency_arb_max_entry_vwap=_envf(
+                "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP", 0.52),
             bregman_projection_enabled=str(os.getenv("PULSE_BREGMAN_PROJECTION_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             bregman_trade_authority=str(os.getenv("PULSE_BREGMAN_TRADE_AUTHORITY", "0"))
@@ -722,6 +783,30 @@ class PulseConfig:
             grok_dependency_enabled=str(os.getenv("PULSE_GROK_DEPENDENCY_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             grok_dependency_interval_s=_envf("PULSE_GROK_DEPENDENCY_INTERVAL_S", 180.0),
+            grok_dep_convergence_enabled=str(
+                os.getenv("PULSE_GROK_DEP_CONVERGENCE_ENABLED", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            grok_dep_convergence_gate_enabled=str(
+                os.getenv("PULSE_GROK_DEP_CONVERGENCE_GATE", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            grok_dep_convergence_min_converge_60s=_envf(
+                "PULSE_GROK_DEP_CONVERGENCE_MIN_CONVERGE_60S", 0.35),
+            grok_dep_convergence_max_calls_per_hour=int(
+                _envf("PULSE_GROK_DEP_CONVERGENCE_MAX_CALLS_PER_HOUR", 30)),
+            dep_arb_verifier_enabled=str(
+                os.getenv("PULSE_DEP_ARB_VERIFIER_ENABLED", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dep_arb_verifier_conjunction_only=str(
+                os.getenv("PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dep_arb_verifier_fail_open=str(
+                os.getenv("PULSE_DEP_ARB_VERIFIER_FAIL_OPEN", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dep_arb_verifier_require_verdict=str(
+                os.getenv("PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dep_arb_verifier_max_calls_per_hour=int(
+                _envf("PULSE_DEP_ARB_VERIFIER_MAX_CALLS_PER_HOUR", 40)),
             sizing_promotion_gated=str(os.getenv("PULSE_SIZING_PROMOTION_GATED", "1"))
             .strip().lower() in ("1", "true", "yes", "on"),
             selectivity_gate_enabled=str(os.getenv("PULSE_SELECTIVITY_GATE_ENABLED", "1"))
@@ -865,6 +950,9 @@ class PulseConfig:
             stop_min_samples=int(_envf("PULSE_STOP_MIN_SAMPLES", 30)),
             stop_min_profit_factor=_envf("PULSE_STOP_MIN_PROFIT_FACTOR", 0.85),
             stop_max_drawdown_pct=_envf("PULSE_STOP_MAX_DRAWDOWN_PCT", 25.0),
+            stop_dep_arb_guard_enabled=str(
+                os.getenv("PULSE_STOP_DEP_ARB_GUARD_ENABLED", "1")).strip().lower()
+            in ("1", "true", "yes", "on"),
             late_window_entry_enabled=str(os.getenv("PULSE_LATE_WINDOW_ENTRY", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             late_window_max_ttc_s=_envf("PULSE_LATE_WINDOW_MAX_TTC_S", 120.0),
@@ -1123,7 +1211,8 @@ class PulseEngine:
             min_profit_factor=self.cfg.stop_min_profit_factor,
             max_drawdown_pct=self.cfg.stop_max_drawdown_pct,
             min_sharpe=float(self.cfg.stop_min_sharpe),
-            sharpe_min_samples=int(self.cfg.stop_sharpe_min_samples)))
+            sharpe_min_samples=int(self.cfg.stop_sharpe_min_samples),
+            dep_arb_guard_enabled=bool(self.cfg.stop_dep_arb_guard_enabled)))
         from engine.pulse.clob_feed import ClobBookFeed
         self.clob_feed = ClobBookFeed(websocket_enabled=bool(self.cfg.clob_websocket_enabled))
         self._wire_clob_feed_metrics()
@@ -1180,14 +1269,22 @@ class PulseEngine:
             from engine.pulse.arbitrage import ArbLedger
             self.arb_ledger = ArbLedger()
         self.dep_arb_ledger = None
+        self._dep_arb_mid_observer = None
         if bool(getattr(self.cfg, "dependency_arb_enabled", True)):
             from engine.pulse.dependency_arb import DependencyArbLedger
+            from engine.pulse.dependency_arb_experiments import DepArbMidConvergenceObserver
             self.dep_arb_ledger = DependencyArbLedger(
                 execute_enabled=bool(self.cfg.dependency_arb_execute_enabled),
                 kelly_enabled=bool(self.cfg.dependency_arb_kelly_enabled),
                 kelly_fraction=float(self.cfg.dependency_arb_kelly_fraction),
                 kelly_depth_frac=float(self.cfg.dependency_arb_kelly_depth_frac),
             )
+            self._dep_arb_mid_observer = DepArbMidConvergenceObserver(
+                horizons_s=tuple(self.cfg.dependency_arb_mid_convergence_horizons_s
+                                 or (30.0, 60.0, 120.0)),
+            )
+        self._loop_synthesis_cache: dict = {}
+        self._dep_arb_experiment_applied: list = []
         # market-beating benchmark for the learning blend: grade the edge model's P(up) vs the MARKET
         # price (poly_yes) per window; the blend only activates when the model actually beats the
         # market out-of-sample (kills phantom edge — calibrated != more accurate than the market).
@@ -1225,10 +1322,13 @@ class PulseEngine:
         self.grok_decider = None
         self.grok_news = None
         self.grok_dep_screener = None
+        self.grok_dep_convergence = None
+        self._obs_completed_n = 0
         self._grok_pending: list = []             # pending decision grades (decision_id/price0/close)
         self._grok_tv_fp: dict = {}               # decision_id -> last MTF fingerprint (refresh Grok)
         self._grok_entry_band_seen: set = set()   # windows that got entry-band Grok refresh
         self._verifier_pending: list = []        # pending verifier counterfactual grades at window close
+        self._dep_arb_verifier_pending: list = []  # dep-arb verifier veto counterfactuals at parent close
         self._recent_windows: list = []           # rolling recent BTC 5m window outcomes (for Grok)
         import random as _random
         self._grok_rng = _random.Random()         # exploration sampler (follow-mode data gathering)
@@ -1244,6 +1344,7 @@ class PulseEngine:
                         or bool(self.cfg.grok_signal_analyst_enabled)
                         or bool(self.cfg.grok_signal_predictor_enabled)
                         or bool(self.cfg.grok_dependency_enabled)
+                        or bool(self.cfg.grok_dep_convergence_enabled)
                         or decider_on)
             if any_grok and xai_key():
                 self.grok_budget = GrokBudget(
@@ -1254,7 +1355,9 @@ class PulseEngine:
                                         "overlay": self.cfg.grok_overlay_max_calls_per_hour,
                                         "decider": self.cfg.grok_decider_max_calls_per_hour,
                                         "news": 40,
-                                        "dependency": 12})
+                                        "dependency": 12,
+                                        "dep_convergence": (
+                                            self.cfg.grok_dep_convergence_max_calls_per_hour)})
             if bool(self.cfg.grok_overlay_enabled) and xai_key():
                 from engine.pulse.overlay import GrokEventOverlay
                 self.overlay = GrokEventOverlay(
@@ -1299,10 +1402,15 @@ class PulseEngine:
                     windows_fn=lambda: self.market.active_windows(),
                     budget=self.grok_budget,
                     interval_s=self.cfg.grok_dependency_interval_s).start()
+            if bool(self.cfg.grok_dep_convergence_enabled) and xai_key():
+                from engine.pulse.grok_dep_convergence import GrokDepConvergencePrior
+                self.grok_dep_convergence = GrokDepConvergencePrior(
+                    budget=self.grok_budget).start()
         except Exception:  # noqa: BLE001 — Grok never blocks startup
             logger.exception("grok init failed; continuing as pure quant")
             self.grok_budget = self.overlay = self.grok_analyst = self.grok_predictor = None
-            self.grok_decider = self.grok_news = self.grok_dep_screener = None
+            self.grok_decider = self.grok_news = None
+            self.grok_dep_screener = self.grok_dep_convergence = None
         # ---- #2 compounding lessons + #3 loop registry ----
         from engine.pulse.lessons import LessonsBook
         from engine.pulse.loops import LoopRegistry
@@ -1313,23 +1421,45 @@ class PulseEngine:
         # ---- #1 independent Claude maker-checker verifier + #4 research meta-loop ----
         self.claude_budget = None
         self.verifier = None
+        self.dep_arb_verifier = None
         self.research_loop = None
         self._research_avoid: set = set()      # canonical "dim=bucket" contexts auto-blocked by Claude
         self._research_exploit: set = set()    # "dim=bucket" contexts Claude flags AND data proves WINNING
         try:
             from engine.pulse.claude_client import anthropic_key
-            need_claude = bool(self.cfg.verifier_enabled) or bool(self.cfg.research_loop_enabled)
+            need_claude = (bool(self.cfg.verifier_enabled)
+                           or bool(self.cfg.research_loop_enabled)
+                           or bool(self.cfg.dep_arb_verifier_enabled))
             if need_claude and anthropic_key():
                 from engine.pulse.grok_intel import GrokBudget
+                hourly = {
+                    "verifier": self.cfg.verifier_max_calls_per_hour,
+                    "research": self.cfg.research_max_calls_per_hour,
+                }
+                if self.cfg.dep_arb_verifier_enabled:
+                    hourly["verifier_dep_arb"] = self.cfg.dep_arb_verifier_max_calls_per_hour
                 self.claude_budget = GrokBudget(
                     daily_usd_cap=self.cfg.claude_budget_daily_usd,
                     est_usd_per_call=self.cfg.claude_est_usd_per_call,
-                    per_feature_hourly={"verifier": self.cfg.verifier_max_calls_per_hour,
-                                        "research": self.cfg.research_max_calls_per_hour})
+                    per_feature_hourly=hourly)
                 if self.cfg.verifier_enabled:
                     from engine.pulse.verifier import ClaudeVerifier
-                    self.verifier = ClaudeVerifier(budget=self.claude_budget, enabled=True,
-                                                   fail_open=self.cfg.verifier_fail_open).start()
+                    self.verifier = ClaudeVerifier(
+                        budget=self.claude_budget, enabled=True,
+                        fail_open=self.cfg.verifier_fail_open,
+                        explore_approve=self.cfg.verifier_explore_approve,
+                        explore_max_size_fraction=float(
+                            self.cfg.verifier_explore_max_size_fraction),
+                    ).start()
+                if self.cfg.dep_arb_verifier_enabled:
+                    from engine.pulse.dep_arb_verifier import ClaudeDepArbVerifier
+                    self.dep_arb_verifier = ClaudeDepArbVerifier(
+                        budget=self.claude_budget,
+                        enabled=True,
+                        fail_open=self.cfg.dep_arb_verifier_fail_open,
+                        require_verdict=self.cfg.dep_arb_verifier_require_verdict,
+                        conjunction_only=self.cfg.dep_arb_verifier_conjunction_only,
+                    ).start()
                 if self.cfg.research_loop_enabled:
                     from engine.pulse.research_loop import ResearchLoop
                     self.research_loop = ResearchLoop(
@@ -1340,7 +1470,7 @@ class PulseEngine:
                         auto_apply=self.cfg.research_auto_apply).start()
         except Exception:  # noqa: BLE001 — verifier/research never block startup
             logger.exception("claude verifier/research init failed; continuing")
-            self.claude_budget = self.verifier = self.research_loop = None
+            self.claude_budget = self.verifier = self.dep_arb_verifier = self.research_loop = None
         # OBSERVE-ONLY TradingView indicator webhook intake (enabled only when a secret is set).
         # Alerts become candidate signals only; they can never place/resize/bypass a paper trade.
         self.tradingview = None
@@ -1544,6 +1674,9 @@ class PulseEngine:
             self.dep_arb_ledger.kelly_enabled = bool(self.cfg.dependency_arb_kelly_enabled)
             self.dep_arb_ledger.kelly_fraction = float(self.cfg.dependency_arb_kelly_fraction)
             self.dep_arb_ledger.kelly_depth_frac = float(self.cfg.dependency_arb_kelly_depth_frac)
+        if getattr(self, "_dep_arb_mid_observer", None) is not None:
+            self._dep_arb_mid_observer.load_state(acct.get("dep_arb_mid_observer") or {})
+        self._dep_arb_experiment_applied = list(acct.get("dep_arb_experiment_applied") or [])[-30:]
         self._allowlist_explored = int(acct.get("allowlist_explored", 0) or 0)
         self._allowlist_blocked = int(acct.get("allowlist_blocked", 0) or 0)
         # restore research avoid-rules, but RE-VALIDATE each against current evidence (drops legacy
@@ -1587,8 +1720,12 @@ class PulseEngine:
             self.grok_decider.load_state(acct.get("grok_decider") or {})
         if self.grok_news is not None:
             self.grok_news.load_state(acct.get("grok_news") or {})
+        if self.grok_dep_convergence is not None:
+            self.grok_dep_convergence.load_state(acct.get("grok_dep_convergence") or {})
+            self._obs_completed_n = int(acct.get("grok_dep_obs_completed_n") or 0)
         self._grok_pending = list(acct.get("grok_pending") or [])
         self._verifier_pending = list(acct.get("verifier_pending") or [])
+        self._dep_arb_verifier_pending = list(acct.get("dep_arb_verifier_pending") or [])
         self._recent_windows = list(acct.get("recent_windows") or [])
         self.lessons.load_state(acct.get("lessons") or {})
         self.trade_history.load_state(acct.get("trade_history") or {})
@@ -1596,6 +1733,8 @@ class PulseEngine:
             self.trade_history.backfill_from_positions(list(self.ledger.positions.values()))
         if self.verifier is not None:
             self.verifier.load_state(acct.get("verifier") or {})
+        if self.dep_arb_verifier is not None:
+            self.dep_arb_verifier.load_state(acct.get("dep_arb_verifier") or {})
         if self.research_loop is not None:
             self.research_loop.load_state(acct.get("research_loop") or {})
         if self.edge_model is not None:          # the learned edge model accumulates across runs
@@ -1701,12 +1840,15 @@ class PulseEngine:
                         tv_feature = {**feat, "grok_p_up": gp.get("p_up")}
         self._grade_grok_decisions(now)   # grade prior Grok decisions vs realized window close
         self._grade_verifier_decisions(now)  # counterfactual grade for vetoed (and shadow) setups
+        self._grade_dep_arb_verifier_decisions(now)  # dep-arb verifier veto counterfactuals
         self._grade_cex_lead(now)         # grade prior CEX-lead signals vs realized window close
         self._grade_market_benchmark(now) # grade model-vs-market accuracy (learning-blend gate)
         if self.arb_ledger is not None:   # settle risk-free arb positions at window close (deterministic)
             self.arb_ledger.settle_due(now)
         if self.dep_arb_ledger is not None:
-            self.dep_arb_ledger.settle_due(now, resolver=self._resolve_dep_arb_position)
+            self.dep_arb_ledger.settle_due(
+                now, resolver=self._resolve_dep_arb_position,
+                on_settled=self._on_dep_arb_position_settled)
         ov = self.overlay.current(now) if self.overlay is not None else None
         ov_blackout = bool(ov and ov.get("blackout"))
         ov_vol_mult = float(ov.get("vol_multiplier", 1.0)) if ov else 1.0
@@ -1948,6 +2090,8 @@ class PulseEngine:
             grok_dec = None
             grok_size_frac = 1.0
             grok_verdict = None
+            allowlist_exploration = False
+            context_explored = False
             if self.grok_decider is not None:
                 self.loops.beat("signal_generation", now)
                 _grok_bundle = self._grok_decision_bundle(mc, dr, w, fair_used, ttc, tv_feature)
@@ -2187,7 +2331,9 @@ class PulseEngine:
                         grok_verdict = self.verifier.get(mc.decision_id) or {
                             "approve": False, "pending": True, "reason": "verifier_pending"}
                     else:
-                        grok_verdict = self.verifier.verdict_or_failopen(mc.decision_id)
+                        grok_verdict = self.verifier.verdict_or_failopen(
+                            mc.decision_id,
+                            exploration=(entry_mode == "grok_explore"))
                     if not grok_verdict.get("approve"):
                         vr = "verifier_pending" if grok_verdict.get("pending") else "verifier_veto"
                         if not grok_verdict.get("pending"):
@@ -2570,6 +2716,7 @@ class PulseEngine:
                               stage="directional_allowlist")
                     continue
                 self._allowlist_explored += 1   # kept active for learning (exploration trade)
+                allowlist_exploration = True
             gate_res = self.selectivity_gate.evaluate(sel_tags, self.selectivity_evidence)
             dr.selectivity = {"decision": gate_res["decision"], "reasons": gate_res["reasons"],
                               "bad_buckets": gate_res["bad_buckets"]}
@@ -2628,7 +2775,18 @@ class PulseEngine:
             # the CALIBRATED probability so the floor reflects realized edge, not the model's claim.
             # Mispricing-follow buys the CEX-indicated (often underdog) side; waive the favourite
             # floor the same way as Wilson-proven cex-lead drive entries.
-            _waive_underdog_floor = cex_lead_active or entry_mode == "mispricing_follow"
+            _exploration_trade = (
+                allowlist_exploration
+                or context_explored
+                or gate_decision in ("explored", "grok_follow_explored", "cex_lead_explored")
+                or str(gate_decision).endswith("_explored")
+                or entry_mode == "grok_explore"
+            )
+            _waive_underdog_floor = (
+                cex_lead_active
+                or entry_mode == "mispricing_follow"
+                or (_exploration_trade and float(self.cfg.directional_explore_rate) > 0)
+            )
             ex = evaluate_execution(
                 side=d.side, book=book, outcome_prob=gate_outcome_prob,
                 size_usd=round(self.cfg.size_usd * grok_size_frac, 2),
@@ -2822,6 +2980,91 @@ class PulseEngine:
         self._persist()
         return {"ticks": self.ticks, "reasons": reasons, "stats": self.ledger.stats()}
 
+    def _on_dep_arb_position_settled(self, pos: dict) -> None:
+        """Grade Claude dep-arb verifier vs realized outcome (segregated from directional)."""
+        if self.dep_arb_verifier is None:
+            return
+        did = str(pos.get("decision_id") or "")
+        if not did:
+            return
+        verifier = pos.get("verifier") or {}
+        acted = bool(verifier.get("approved", True))
+        self.dep_arb_verifier.grade(
+            did,
+            won=bool(pos.get("won")),
+            pnl=float(pos.get("realized_profit_usd") or 0),
+            acted=acted,
+        )
+        self._maybe_request_dep_arb_verifier_research()
+
+    def _schedule_dep_arb_verifier_counterfactual(
+        self, decision_id: str, trade: dict, *, close_ts: float,
+    ) -> None:
+        """Queue a vetoed conjunction bind for counterfactual P&L at parent window close."""
+        if not decision_id or self.dep_arb_verifier is None or not trade:
+            return
+        for p in self._dep_arb_verifier_pending:
+            if p.get("decision_id") == decision_id:
+                return
+        snap = {
+            "decision_id": decision_id,
+            "close_ts": float(close_ts),
+            "parent_market_id": trade.get("parent_market_id"),
+            "parent_window_key": trade.get("parent_window_key"),
+            "shares": trade.get("shares"),
+            "cost_usd": trade.get("cost_usd"),
+            "entry_vwap": trade.get("entry_vwap"),
+            "s_open": trade.get("s_open"),
+        }
+        self._dep_arb_verifier_pending.append(snap)
+
+    def _grade_dep_arb_verifier_decisions(self, now: float) -> None:
+        """Grade vetoed dep-arb verifier verdicts vs parent-UP resolution at close."""
+        if not self._dep_arb_verifier_pending or self.dep_arb_verifier is None:
+            return
+        from engine.pulse.dependency_arb import outcome_settled_pnl
+        still = []
+        graded_any = False
+        for p in self._dep_arb_verifier_pending:
+            close_ts = float(p.get("close_ts") or 0)
+            if now < close_ts:
+                still.append(p)
+                continue
+            outcome_up, _src = self._resolve_dep_arb_position(p, now)
+            if outcome_up is None:
+                if now <= close_ts + float(self.cfg.settle_grace_s) + 120.0:
+                    still.append(p)
+                continue
+            trade = {
+                "shares": p.get("shares"),
+                "cost_usd": p.get("cost_usd"),
+                "entry_vwap": p.get("entry_vwap"),
+            }
+            pnl = outcome_settled_pnl(trade, outcome_up=bool(outcome_up))
+            self.dep_arb_verifier.grade(
+                str(p.get("decision_id") or ""),
+                won=bool(outcome_up),
+                pnl=float(pnl or 0),
+                acted=False,
+            )
+            graded_any = True
+        self._dep_arb_verifier_pending = still[-500:]
+        if graded_any:
+            self._maybe_request_dep_arb_verifier_research()
+
+    def _maybe_request_dep_arb_verifier_research(self) -> None:
+        """Nudge research meta-loop when dep-arb verifier has enough graded outcomes."""
+        if self.research_loop is None or self.dep_arb_verifier is None:
+            return
+        try:
+            vq = (self.dep_arb_verifier.report().get("veto_quality") or {})
+            n = int(vq.get("n") or 0)
+            min_n = int(vq.get("min_samples") or 10)
+            if n >= min_n:
+                self.research_loop.request_run("dep_arb_verifier_grade")
+        except Exception:  # noqa: BLE001
+            pass
+
     def _resolve_dep_arb_position(self, pos: dict, now: float) -> "tuple[Optional[bool], str]":
         """Resolve parent-UP outcome for dependency-arb settlement (Polymarket first, RTDS proxy)."""
         if pos.get("s_close") is None:
@@ -2850,10 +3093,40 @@ class PulseEngine:
         return passes_walk_forward(
             positions, min_holdout_n=5, min_holdout_pf=1.0)
 
+    def _dep_arb_intel_report(self) -> dict:
+        from engine.pulse.dep_arb_intel import build_dep_arb_intel_report
+        return build_dep_arb_intel_report(
+            grok_dependency=getattr(self, "_grok_dependency_report", None),
+            grok_screener=(self.grok_dep_screener.report()
+                           if self.grok_dep_screener is not None else None),
+            grok_convergence=(self.grok_dep_convergence.report()
+                              if self.grok_dep_convergence is not None else None),
+            claude_verifier=(self.dep_arb_verifier.report()
+                             if self.dep_arb_verifier is not None else None),
+        )
+
     def _dep_arb_report(self) -> dict:
         if self.dep_arb_ledger is None:
             return {}
-        return self.dep_arb_ledger.report(walk_forward=self._dep_arb_walk_forward())
+        rep = self.dep_arb_ledger.report(walk_forward=self._dep_arb_walk_forward())
+        obs = getattr(self, "_dep_arb_mid_observer", None)
+        rep["experiments"] = {
+            "nested_execute_enabled": bool(self.cfg.dependency_arb_nested_execute),
+            "clock_skew_enabled": bool(self.cfg.dependency_arb_clock_skew_enabled),
+            "mid_exit_enabled": bool(self.cfg.dependency_arb_mid_exit_enabled),
+            "mid_exit_horizon_s": float(self.cfg.dependency_arb_mid_exit_horizon_s),
+            "max_entry_vwap": float(self.cfg.dependency_arb_max_entry_vwap),
+            "clock_skew_params": {
+                "min_parent_book_age_s": self.cfg.dependency_arb_min_parent_book_age_s,
+                "max_child_book_age_s": self.cfg.dependency_arb_max_child_book_age_s,
+                "max_child_window_age_s": self.cfg.dependency_arb_max_child_window_age_s,
+            },
+            "mid_convergence": (obs.report() if obs is not None else {}),
+            "grok_convergence_enabled": bool(self.cfg.grok_dep_convergence_enabled),
+            "grok_convergence_gate_enabled": bool(self.cfg.grok_dep_convergence_gate_enabled),
+        }
+        self.dep_arb_ledger.experiments_report = rep["experiments"]
+        return rep
 
     def _settle_due(self, now: float) -> None:
         for pos in list(self.ledger.open_positions()):
@@ -4073,6 +4346,7 @@ class PulseEngine:
         report["arb_graph"] = getattr(self, "_arb_graph_report", None) or {"nodes": 0}
         report["grok_dependency"] = getattr(self, "_grok_dependency_report", None) or {
             "dependency_proposals": 0}
+        report["dep_arb_intel"] = self._dep_arb_intel_report()
         report["bregman_projection"] = getattr(self, "_bregman_projection_report", None) or {
             "enabled": False}
         report["clob_feed"] = (
@@ -4138,8 +4412,32 @@ class PulseEngine:
         report["scores"] = compute_report_scores(
             report["sections"], global_reconciled=bool(report.get("global_reconciled")))
         report["score_history"] = self._score_history.to_dict()
+        report["loop_synthesis"] = self._loop_synthesis_and_improve(report)
         report["schema"] = "btc_pulse_light_report/1.3"
         return report
+
+    def _loop_synthesis_and_improve(self, report: dict) -> dict:
+        """WS5 loop engine: read live report, emit proposals, apply bounded dep-arb self-improve."""
+        from engine.pulse.loop_synthesis import synthesize
+        from engine.pulse.dependency_arb_experiments import apply_dep_arb_experiments
+        synth = synthesize(report)
+        applied: list = []
+        if self.dep_arb_ledger is not None:
+            applied = apply_dep_arb_experiments(
+                self.cfg,
+                report.get("dependency_arbitrage") or {},
+                auto_apply=bool(self.cfg.dependency_arb_experiment_auto_apply),
+            )
+            if applied:
+                self._dep_arb_experiment_applied = (
+                    self._dep_arb_experiment_applied + applied)[-30:]
+                if self.research_loop is not None:
+                    self.research_loop.request_run("dep_arb_experiment")
+        synth["dep_arb_auto_applied"] = applied
+        synth["dep_arb_recent_applied"] = list(self._dep_arb_experiment_applied)
+        self._loop_synthesis_cache = synth
+        self.loops.beat("loop_synthesis")
+        return synth
 
     def _late_window_report(self) -> dict:
         """Late-window high-conviction entry mode (gate) + observe-only time-decay edge grade."""
@@ -4461,7 +4759,8 @@ class PulseEngine:
         eps = max(0.01, float(self.cfg.dependency_arb_epsilon))
         violations = scan_windows(
             open_w, epsilon=eps, max_usd=self.cfg.dependency_arb_max_usd,
-            vwap_enrich=True)
+            vwap_enrich=True,
+            conjunction_enabled=bool(self.cfg.dependency_arb_conjunction_enabled))
 
         bregman_by_parent: dict[str, dict] = {}
         if self.cfg.bregman_projection_enabled:
@@ -4498,9 +4797,65 @@ class PulseEngine:
             self._bregman_projection_report = {"enabled": False}
 
         self.dep_arb_ledger.record_scan(violations)
+        from engine.pulse.dependency_arb_experiments import execute_gate
+        obs = getattr(self, "_dep_arb_mid_observer", None)
+        by_id = {w.event_id: w for w in open_w}
+        if obs is not None and self.cfg.dependency_arb_mid_convergence_observe:
+            obs.advance(open_w, now=now)
+            if self.grok_dep_convergence is not None:
+                completed = list(getattr(obs, "_completed", None) or [])
+                n_done = len(completed)
+                if n_done > self._obs_completed_n:
+                    for row in completed[self._obs_completed_n:]:
+                        readings = row.get("readings") or {}
+                        r60 = readings.get(60.0) or readings.get(60)
+                        if r60 is None:
+                            continue
+                        gkey = "grok_conv:%s:%s:%s" % (
+                            row.get("parent_key", ""), row.get("child_key", ""),
+                            row.get("constraint_type", ""))
+                        self.grok_dep_convergence.grade(
+                            gkey, converged_60s=bool(r60.get("converged")))
+                    self._obs_completed_n = n_done
+            for v in violations:
+                if not v.actionable:
+                    continue
+                child_id = (v.child_window_keys or [None])[0]
+                obs.snap(v, parent=by_id.get(v.parent_window_key),
+                         child=by_id.get(child_id) if child_id else None, now=now)
+        if self.grok_dep_convergence is not None:
+            from engine.pulse.dependency_arb_experiments import _book_age_s
+            from engine.pulse.grok_dep_convergence import (
+                build_convergence_context, violation_prior_key,
+            )
+            mid_conv = (obs.report() if obs is not None else {})
+            for v in violations:
+                if not v.actionable:
+                    continue
+                parent = by_id.get(v.parent_window_key)
+                child_id = (v.child_window_keys or [None])[0]
+                child = by_id.get(child_id) if child_id else None
+                if parent is None or child is None:
+                    continue
+                ctx = build_convergence_context(
+                    v, parent, child, now=now,
+                    parent_book_age_s=_book_age_s(getattr(parent, "up_book", None), now),
+                    child_book_age_s=_book_age_s(getattr(child, "up_book", None), now),
+                    mid_convergence_empirical=mid_conv.get("by_horizon") or {},
+                )
+                self.grok_dep_convergence.request(violation_prior_key(v), ctx)
+                self.loops.beat("grok_dep_convergence", now)
+        if self.cfg.dependency_arb_mid_exit_enabled:
+            from engine.pulse.dependency_arb_experiments import try_mid_exit_positions
+            try_mid_exit_positions(
+                self.dep_arb_ledger, by_id, now=now,
+                horizon_s=float(self.cfg.dependency_arb_mid_exit_horizon_s),
+                enabled=True,
+            )
         if not self.dep_arb_ledger.execute_enabled:
             return
-        by_id = {w.event_id: w for w in open_w}
+        if self.stop_monitor.is_halted("dependency_arbitrage"):
+            return
         for v in violations:
             if not v.actionable:
                 continue
@@ -4514,6 +4869,19 @@ class PulseEngine:
             child_id = (v.child_window_keys or [None])[0]
             child = by_id.get(child_id) if child_id else None
             if parent is None or child is None:
+                continue
+            gate_ok, gate_reason = execute_gate(
+                v,
+                nested_execute_enabled=bool(self.cfg.dependency_arb_nested_execute),
+                clock_skew_enabled=bool(self.cfg.dependency_arb_clock_skew_enabled),
+                parent=parent, child=child, now=now,
+                min_parent_book_age_s=float(self.cfg.dependency_arb_min_parent_book_age_s),
+                max_child_book_age_s=float(self.cfg.dependency_arb_max_child_book_age_s),
+                max_child_window_age_s=float(self.cfg.dependency_arb_max_child_window_age_s),
+            )
+            if not gate_ok:
+                self.dep_arb_ledger.rejected_by_reason[gate_reason] = (
+                    int(self.dep_arb_ledger.rejected_by_reason.get(gate_reason, 0) or 0) + 1)
                 continue
             bdiag = bregman_by_parent.get(str(v.parent_window_key))
             wf = self._dep_arb_walk_forward()
@@ -4531,6 +4899,85 @@ class PulseEngine:
                 walk_forward_passed=bool(wf.get("passed")),
                 s_open=snap,
             )
+            if trade:
+                max_entry = float(self.cfg.dependency_arb_max_entry_vwap)
+                if float(trade.get("entry_vwap") or 0) > max_entry + 1e-9:
+                    self.dep_arb_ledger.rejected_by_reason["entry_vwap_above_cap"] = (
+                        int(self.dep_arb_ledger.rejected_by_reason.get(
+                            "entry_vwap_above_cap", 0) or 0) + 1)
+                    trade = None
+            if trade:
+                from engine.pulse.dependency_arb import dep_arb_bucket_bleeding
+                halted, halt_reason = dep_arb_bucket_bleeding(
+                    float(trade.get("entry_vwap") or 0),
+                    self.dep_arb_ledger.calibration,
+                )
+                if halted:
+                    self.dep_arb_ledger.rejected_by_reason[halt_reason] = (
+                        int(self.dep_arb_ledger.rejected_by_reason.get(halt_reason, 0) or 0) + 1)
+                    continue
+            if trade and self.dep_arb_verifier is not None:
+                dav = self.dep_arb_verifier
+                if dav.should_verify(str(getattr(v, "constraint_type", "") or "")):
+                    from engine.pulse.dep_arb_verifier import (
+                        build_dep_arb_verify_payload, shrink_dep_arb_trade)
+                    from engine.pulse.dependency_arb_experiments import _book_age_s
+                    did = dav.decision_id(v, child_key=str(child_id or ""))
+                    grok_conv_prior = None
+                    if self.grok_dep_convergence is not None:
+                        from engine.pulse.grok_dep_convergence import violation_prior_key
+                        grok_conv_prior = self.grok_dep_convergence.get(violation_prior_key(v))
+                    payload = build_dep_arb_verify_payload(
+                        v, trade,
+                        bregman_diag=bdiag,
+                        experiments=dict(getattr(self.dep_arb_ledger, "experiments_report", None) or {}),
+                        calibration_bucket=self.dep_arb_ledger.calibration.bucket_stats(
+                            float(trade.get("entry_vwap") or 0)),
+                        parent_book_age_s=_book_age_s(getattr(parent, "up_book", None), now),
+                        child_book_age_s=_book_age_s(getattr(child, "up_book", None), now),
+                        grok_dependency=getattr(self, "_grok_dependency_report", None),
+                        grok_convergence=grok_conv_prior,
+                    )
+                    dav.request(did, payload)
+                    self.loops.beat("dep_arb_verifier", now)
+                    verdict = dav.verdict_or_failopen(did)
+                    if verdict.get("pending") and self.cfg.dep_arb_verifier_require_verdict:
+                        self.dep_arb_ledger.rejected_by_reason["dep_arb_verifier_pending"] = (
+                            int(self.dep_arb_ledger.rejected_by_reason.get(
+                                "dep_arb_verifier_pending", 0) or 0) + 1)
+                        continue
+                    if not verdict.get("approve") and not verdict.get("pending"):
+                        self.dep_arb_ledger.rejected_by_reason["dep_arb_verifier_veto"] = (
+                            int(self.dep_arb_ledger.rejected_by_reason.get(
+                                "dep_arb_verifier_veto", 0) or 0) + 1)
+                        self._schedule_dep_arb_verifier_counterfactual(
+                            did, trade, close_ts=float(parent.close_ts))
+                        continue
+                    if verdict.get("approve"):
+                        msf = float(verdict.get("max_size_fraction", 1.0) or 1.0)
+                        if msf < 1.0 - 1e-9:
+                            trade = shrink_dep_arb_trade(trade, msf)
+                    trade["decision_id"] = did
+                    trade["verifier"] = {
+                        "approved": bool(verdict.get("approve")),
+                        "reason": str(verdict.get("reason") or "")[:200],
+                        "pending": bool(verdict.get("pending")),
+                    }
+            if trade and self.grok_dep_convergence is not None:
+                if bool(self.cfg.grok_dep_convergence_gate_enabled):
+                    from engine.pulse.grok_dep_convergence import (
+                        convergence_prior_passes_gate, violation_prior_key,
+                    )
+                    prior = self.grok_dep_convergence.get(violation_prior_key(v))
+                    gate_ok, gate_reason = convergence_prior_passes_gate(
+                        prior,
+                        min_converge_60s=float(self.cfg.grok_dep_convergence_min_converge_60s),
+                    )
+                    if not gate_ok:
+                        self.dep_arb_ledger.rejected_by_reason[gate_reason] = (
+                            int(self.dep_arb_ledger.rejected_by_reason.get(
+                                gate_reason, 0) or 0) + 1)
+                        trade = None
             if trade and self.dep_arb_ledger.book(trade, now=now):
                 self.loops.beat("dependency_arb", now)
 
@@ -4695,6 +5142,16 @@ class PulseEngine:
                    skill="independent Claude verdict", verifier="claude",
                    stop_condition="approve/veto verdict",
                    status_fn=(lambda: self.verifier.report()) if self.verifier else None)
+        r.register("dep_arb_verifier", role="verify(dep-arb)", trigger="per_conjunction_bind",
+                   skill="claude_dep_arb_verifier", verifier="claude",
+                   stop_condition="conjunction approve/veto",
+                   status_fn=(lambda: self.dep_arb_verifier.report())
+                   if self.dep_arb_verifier else None)
+        r.register("grok_dep_convergence", role="intel(dep-arb)", trigger="per_actionable_violation",
+                   skill="grok_dep_convergence.py", verifier="grok",
+                   stop_condition="accuracy_60s vs mid_observer",
+                   status_fn=(lambda: self.grok_dep_convergence.report())
+                   if self.grok_dep_convergence else None)
         r.register("execution", role="execute", trigger="per_decision",
                    skill="execution-quality gate (authoritative)", stop_condition="fill or reject")
         if self.arb_ledger is not None:
@@ -4712,6 +5169,10 @@ class PulseEngine:
                    interval_s=self.cfg.research_interval_s, verifier="claude",
                    stop_condition="verifiable metric improvement",
                    status_fn=(lambda: self.research_loop.report()) if self.research_loop else None)
+        r.register("loop_synthesis", role="loop_engine(WS5)", trigger="per_light_report",
+                   skill="loop_synthesis.py + dependency_arb_experiments",
+                   stop_condition="evidence-gated next experiment",
+                   status_fn=lambda: getattr(self, "_loop_synthesis_cache", {}) or {})
         r.register("lessons", role="memory", trigger="per_settlement", skill="LESSONS.md",
                    status_fn=lambda: {"calls": len(self.lessons.lessons)})
 
@@ -4943,6 +5404,7 @@ class PulseEngine:
             "arb_graph": getattr(self, "_arb_graph_report", None) or {"nodes": 0},
             "grok_dependency": getattr(self, "_grok_dependency_report", None) or {
                 "dependency_proposals": 0},
+            "dep_arb_intel": self._dep_arb_intel_report(),
             "bregman_projection": getattr(self, "_bregman_projection_report", None) or {
                 "enabled": False},
             "clob_feed": (
@@ -5013,6 +5475,12 @@ class PulseEngine:
                                              if self.arb_ledger is not None else {}),
                               "dep_arb_ledger": (self.dep_arb_ledger.to_state()
                                                  if self.dep_arb_ledger is not None else {}),
+                              "dep_arb_mid_observer": (
+                                  self._dep_arb_mid_observer.to_state()
+                                  if getattr(self, "_dep_arb_mid_observer", None) is not None
+                                  else {}),
+                              "dep_arb_experiment_applied": list(
+                                  getattr(self, "_dep_arb_experiment_applied", []) or [])[-30:],
                               "allowlist_explored": self._allowlist_explored,
                               "allowlist_blocked": self._allowlist_blocked,
                               "research_avoid": sorted(self._research_avoid),
@@ -5025,11 +5493,21 @@ class PulseEngine:
                                                if self.grok_decider is not None else {}),
                               "grok_news": (self.grok_news.to_state()
                                             if self.grok_news is not None else {}),
+                              "grok_dep_convergence": (
+                                  self.grok_dep_convergence.to_state()
+                                  if self.grok_dep_convergence is not None else {}),
+                              "grok_dep_obs_completed_n": int(
+                                  getattr(self, "_obs_completed_n", 0) or 0),
                               "grok_pending": self._grok_pending[-2000:],
                               "verifier_pending": self._verifier_pending[-2000:],
+                              "dep_arb_verifier_pending": (
+                                  list(self._dep_arb_verifier_pending)[-500:]),
                               "recent_windows": self._recent_windows[-40:],
                               "verifier": (self.verifier.to_state() if self.verifier is not None
                                            else {}),
+                              "dep_arb_verifier": (
+                                  self.dep_arb_verifier.to_state()
+                                  if self.dep_arb_verifier is not None else {}),
                               "research_loop": (self.research_loop.to_state()
                                                 if self.research_loop is not None else {}),
                               "lessons": self.lessons.to_state(),

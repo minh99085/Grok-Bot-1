@@ -52,6 +52,24 @@ class ExecResult:
                 "fillable_usd": round(self.fillable_usd, 2), "spread": self.spread}
 
 
+def vwap_sell_bids(bids: list, shares: float) -> "tuple[Optional[float], float, float, bool]":
+    """Walk the bid ladder (best->worst) selling up to ``shares``. Returns
+    (vwap, proceeds_usd, shares_sold, fully_sold)."""
+    sold = 0.0
+    proceeds = 0.0
+    for price, sz in (bids or []):
+        if price <= 0 or sz <= 0:
+            continue
+        if sold >= float(shares) - 1e-9:
+            break
+        take = min(float(sz), float(shares) - sold)
+        proceeds += take * price
+        sold += take
+    fully = sold >= float(shares) - 1e-9
+    vwap = (proceeds / sold) if sold > 0 else None
+    return vwap, proceeds, sold, fully
+
+
 def vwap_fill(asks: list, size_usd: float) -> "tuple[Optional[float], float, float, bool]":
     """Walk the ask ladder (best->worst) spending up to ``size_usd``. Returns
     (vwap, filled_usd, filled_shares, fully_filled)."""

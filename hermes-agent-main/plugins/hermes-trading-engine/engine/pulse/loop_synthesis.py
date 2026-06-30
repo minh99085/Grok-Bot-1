@@ -160,6 +160,87 @@ def synthesize(report: dict, *, min_samples: int = 50) -> dict:
             % primary,
             "improvement_ratio must trend up across soaks with the proven lane leading."))
 
+    # --- 7) Dep-arb experiments: mid-convergence, capture bleed, conjunction vs nested ----------- #
+    dep = _deep_get(report, "dependency_arbitrage") or {}
+    if isinstance(dep, dict) and dep.get("enabled") is not False:
+        exp = dep.get("experiments") or {}
+        booking = dep.get("booking") or {}
+        settled_n = int(booking.get("settled_n") or dep.get("settled") or 0)
+        capture = booking.get("capture_ratio")
+        theoretical = float(booking.get("theoretical_settled_usd") or 0)
+        if settled_n >= 3 and capture is not None and float(capture) < 0.10 and theoretical > 50:
+            proposals.append(_proposal(
+                P_HIGH, "dependency_arb_experiments",
+                "Dep-arb capture_ratio %.3f on $%.0f theoretical (%d settled) — edge bleeds at hold."
+                % (float(capture), theoretical, settled_n),
+                "nested_implication holds to resolution; mid-gap may converge before settlement.",
+                "Keep nested_execute=0; soak mid_convergence observer; if 60s converged_rate>0.5, "
+                "prototype mid-exit paper lane.",
+                "Mid-convergence n>=10 at 60s with converged_rate>=0.5 before mid-exit execute."))
+
+        mid = exp.get("mid_convergence") or {}
+        by_h = mid.get("by_horizon") or {}
+        h60 = by_h.get("60") or {}
+        n60 = int(h60.get("n") or 0)
+        rate60 = h60.get("converged_rate")
+        if n60 >= 10 and rate60 is not None:
+            if float(rate60) >= 0.50:
+                proposals.append(_proposal(
+                    P_HIGH, "dependency_arb_experiments",
+                    "Mid-gap converges within 60s on %.1f%% of %d observations (rate=%.3f)."
+                    % (float(rate60) * 100, n60, float(rate60)),
+                    "Violation gaps mean-revert quickly — hold-to-resolution leaves money on table.",
+                    "Design paper mid-exit at 60s when gap_decay>50%%; size only conjunction binds.",
+                    "Walk-forward on mid-exit paper fills: PF>=1.0 and n>=20 before sizing up."))
+            elif float(rate60) < 0.30:
+                proposals.append(_proposal(
+                    P_MED, "dependency_arb_experiments",
+                    "Mid-gap rarely converges by 60s (rate=%.3f, n=%d) — heuristic gap may be noise."
+                    % (float(rate60), n60),
+                    "Child/parent mid divergence may not mean-revert on this horizon.",
+                    "Stay conjunction-only execute; treat nested_implication as observe-only forever.",
+                    "converged_rate stays <0.30 across two soaks with n60>=20."))
+
+        if exp.get("nested_execute_enabled"):
+            cal = dep.get("dependency_arb_calibration") or {}
+            for bucket, st in (cal.get("by_entry_bucket") or {}).items():
+                st = st or {}
+                n = int(st.get("n") or 0)
+                pf = st.get("profit_factor")
+                if n >= 5 and pf is not None and float(pf) < 1.0:
+                    proposals.append(_proposal(
+                        P_HIGH, "dependency_arb_experiments",
+                        "nested_execute still ON but bucket %s bleeds (PF=%.2f, n=%d)."
+                        % (bucket, float(pf), n),
+                        "Heuristic nested_implication is actively losing settled paper P&L.",
+                        "Set PULSE_DEPENDENCY_ARB_NESTED_EXECUTE=0 (conjunction-only).",
+                        "Auto-apply should flip nested_execute off; verify in experiments block."))
+                    break
+
+        last_v = dep.get("last_violations") or []
+        conj_seen = sum(1 for v in last_v
+                        if str((v or {}).get("constraint_type", "")) == "conjunction_implication")
+        nested_seen = sum(1 for v in last_v
+                          if str((v or {}).get("constraint_type", "")) == "nested_implication")
+        executed = int(dep.get("executed") or 0)
+        if conj_seen > 0 and executed == 0 and not exp.get("nested_execute_enabled"):
+            proposals.append(_proposal(
+                P_MED, "dependency_arb_experiments",
+                "Conjunction violations seen (%d recent) but 0 dep-arb fills — true arb not binding."
+                % conj_seen,
+                "Clock-skew or walk-forward may block conjunction; nested is already off.",
+                "Verify PULSE_DEPENDENCY_ARB_CONJUNCTION=1; review rejected_by_reason for "
+                "clock_skew_* and walk_forward.",
+                "At least 1 conjunction paper fill OR explicit gate reason dominates rejects."))
+        elif nested_seen > 5 and conj_seen == 0:
+            proposals.append(_proposal(
+                P_LOW, "dependency_arb_experiments",
+                "Only nested_implication violations (%d recent), no conjunction binds."
+                % nested_seen,
+                "TRUE multi-child Fréchet floor rarely fires on current BTC books.",
+                "Keep conjunction=1 for measurement; nested observe-only via nested_execute=0.",
+                "conjunction_implication appears in last_violations at least once per soak."))
+
     ranked = _rank(proposals)
     return {
         "schema": "loop_synthesis/1.0", "observe_only": True, "auto_apply": False,

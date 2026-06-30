@@ -7,27 +7,60 @@
     "win_rate_target": 1.0,
     "win_rate_target_deferred": false,
     "priority": "arb_perfect_win_rate",
-    "note": "Bot1 arb-first lab. Operator 2026-06-29: babysit cycles cleared; autopilot OFF. VPS still runs; no autonomous /pulse-babysit."
+    "note": "Overnight soak 2026-06-30: mid-exit dep-arb, halt wiring, entry cap 0.52, max_price 0.52."
   },
-  "cycle": 0,
-  "phase": "stopped",
-  "soak_hours": 1,
-  "soak_minutes": 60,
-  "deployed_at": null,
-  "soak_until": null,
-  "last_eval_at": null,
-  "last_verdict": null,
-  "last_fixes": [],
+  "cycle": 1,
+  "phase": "soak",
+  "soak_hours": 8,
+  "soak_minutes": 480,
+  "deployed_at": "2026-06-30T03:45:00+00:00",
+  "soak_until": "2026-06-30T11:45:00+00:00",
+  "last_eval_at": "2026-06-30T03:35:19.936831+00:00",
+  "last_verdict": "issues_fixed_overnight_soak",
+  "last_fixes": [
+    "mid_exit_convergence paper lane (60s horizon)",
+    "wire dep_arb stop halt before new executes",
+    "max_entry_vwap 0.52 + PULSE_MAX_PRICE 0.52",
+    "stop guard recovery when mid_convergence n>=5 rate>=0.5",
+    "evaluate-cycle strategy_halted names correct strategy"
+  ],
   "last_health_verdict": null,
-  "baseline_trades_at_deploy": null,
-  "vps_sha": null,
-  "history": [],
+  "baseline_trades_at_deploy": 9,
+  "vps_sha": "2e3ed41",
+  "history": [
+    {
+      "ts": "2026-06-29T23:38:50.528070+00:00",
+      "verdict": "healthy",
+      "metrics": {
+        "settled": 5,
+        "win_rate": 0.6,
+        "profit_factor": 1.3732,
+        "realized_pnl_usd": 3.73,
+        "ticks": 778
+      },
+      "issue_codes": []
+    },
+    {
+      "ts": "2026-06-30T03:35:19.936831+00:00",
+      "verdict": "blocked",
+      "metrics": {
+        "settled": 9,
+        "win_rate": 0.4444,
+        "profit_factor": 0.7415,
+        "realized_pnl_usd": -6.46,
+        "ticks": 715
+      },
+      "issue_codes": [
+        "strategy_halted"
+      ]
+    }
+  ],
   "babysit_autopilot": false,
   "hands_off_started_at": null,
   "hands_off_until": null,
-  "self_improve_started_at": null,
+  "self_improve_started_at": "2026-06-30T03:45:00+00:00",
   "baseline_at_hands_off": null,
-  "stopped_at": "2026-06-29T14:45:00+00:00",
-  "stopped_reason": "operator_cleared_babysit_cycles",
-  "note": "Operator 2026-06-29: all babysit cycle history cleared; autopilot disabled; scheduled tasks removed."
+  "stopped_at": null,
+  "stopped_reason": null,
+  "note": "Quant team overnight soak: VPS running paper-only with mid-exit + conjunction experiments."
 }

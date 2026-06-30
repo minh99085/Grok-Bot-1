@@ -99,6 +99,34 @@ def test_stop_monitor_is_halted():
     assert mon.is_halted("directional") is True
 
 
+def test_dependency_arb_halted_on_negative_realized_when_guard_on():
+    cfg = StopConfig(dep_arb_guard_enabled=True)
+    rep = {
+        "executed": 10,
+        "settled": 10,
+        "realized_profit_usd": -5.0,
+        "booking": {"realized_settled_usd": -5.0, "theoretical_settled_usd": 20.0,
+                    "capture_ratio": -0.25, "settled_n": 10},
+        "experiments": {"mid_exit_enabled": True, "mid_convergence": {"by_horizon": {"60": {"n": 0}}}},
+    }
+    out = evaluate_dependency_arb(dep_positions={}, dep_report=rep, cfg=cfg)
+    assert out["halted"] is True
+    assert "negative_realized_dependency_arb" in out["reasons"]
+
+
+def test_dependency_arb_not_halted_on_negative_when_guard_off():
+    cfg = StopConfig(dep_arb_guard_enabled=False)
+    rep = {
+        "executed": 10,
+        "settled": 10,
+        "realized_profit_usd": -5.0,
+        "booking": {"realized_settled_usd": -5.0, "theoretical_settled_usd": 20.0,
+                    "capture_ratio": -0.25, "settled_n": 10},
+    }
+    out = evaluate_dependency_arb(dep_positions={}, dep_report=rep, cfg=cfg)
+    assert out["halted"] is False
+
+
 def test_dependency_arb_stop_observes_walk_forward_not_halted_on_positive():
     cfg = StopConfig()
     rep = {

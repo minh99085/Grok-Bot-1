@@ -80,7 +80,7 @@ UPDATES = {
     "PULSE_MIN_EDGE": "0.008",
     "PULSE_BASIS_BUFFER": "0.008",
     # Bot1 strategy: sweet-spot only (0.47-0.55) — tighter than Bot2 for A/B test.
-    "PULSE_MIN_ENTRY_PRICE": "0.47",
+    "PULSE_MIN_ENTRY_PRICE": "0.45",
     "PULSE_MIN_REWARD_RISK": "0.50",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
     "PULSE_GROK_UP_MIN_P_WIN": "0.58",
@@ -91,7 +91,7 @@ UPDATES = {
     "PULSE_STOP_MIN_SAMPLES": "60",
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 8-11).
     "PULSE_TICK_SECONDS": "15",
-    "PULSE_MAX_PRICE": "0.55",
+    "PULSE_MAX_PRICE": "0.52",
     # [TV-LOCK] context gate off — TV never blocks entries.
     "PULSE_TV_CONTEXT_GATE": "0",
     # TV confidence tier: modulate min_edge/max_price at 15m sweet spot (not a trade gate).
@@ -151,9 +151,36 @@ UPDATES = {
     "PULSE_ARB_EPSILON": "0.003",
     "PULSE_ARB_EPSILON_5M": "0.003",
     "PULSE_ARB_EPSILON_15M": "0.003",
-    "PULSE_DEPENDENCY_ARB_EPSILON": "0.02",
+    "PULSE_DEPENDENCY_ARB_EPSILON": "0.03",
+    # WS3-B: TRUE multi-child conjunction constraint (Fréchet floor). Default OFF — flip to "1" to
+    # START MEASURING it (outcome-settled) before trusting; the bound rarely binds but is real.
+    "PULSE_DEPENDENCY_ARB_CONJUNCTION": "0",
+    # Dep-arb experiments: nested + conjunction paper execute (operator re-enabled nested 2026-06-30),
+    # clock-skew filter, mid-convergence observe-only telemetry.
+    "PULSE_DEPENDENCY_ARB_NESTED_EXECUTE": "1",
+    # Off: parent books refresh every tick (~15s) so min_parent_book_age_s=120 starved all fills.
+    "PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED": "0",
+    "PULSE_DEPENDENCY_ARB_MIN_PARENT_BOOK_AGE_S": "120",
+    "PULSE_DEPENDENCY_ARB_MAX_CHILD_BOOK_AGE_S": "90",
+    "PULSE_DEPENDENCY_ARB_MAX_CHILD_WINDOW_AGE_S": "120",
+    "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_OBSERVE": "1",
+    "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_HORIZONS_S": "30,60,120",
+    # Off overnight: runtime auto_apply can flip nested_execute=0 on bleeding buckets.
+    "PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY": "0",
+    "PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED": "1",
+    "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S": "60",
+    "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.52",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
+    "PULSE_GROK_DEP_CONVERGENCE_ENABLED": "1",
+    "PULSE_GROK_DEP_CONVERGENCE_GATE": "0",
+    "PULSE_GROK_DEP_CONVERGENCE_MIN_CONVERGE_60S": "0.35",
+    "PULSE_GROK_DEP_CONVERGENCE_MAX_CALLS_PER_HOUR": "30",
+    "PULSE_DEP_ARB_VERIFIER_ENABLED": "1",
+    "PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY": "1",
+    "PULSE_DEP_ARB_VERIFIER_FAIL_OPEN": "1",
+    "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT": "0",
+    "PULSE_DEP_ARB_VERIFIER_MAX_CALLS_PER_HOUR": "40",
     # WS2 (operator-authorized 2026-06-29): un-pause directional for DOWN-side data COLLECTION only.
     # Stays DOWN-only (UP hard-blocked) + a small cold-start exploration carve-out so proven-winning
     # buckets can actually be discovered instead of deadlocking at zero trades. Capped by
@@ -184,6 +211,8 @@ UPDATES = {
     "PULSE_CLOB_WEBSOCKET_ENABLED": "1",
     "PULSE_STOP_MIN_SHARPE": "0",
     "PULSE_STOP_SHARPE_MIN_SAMPLES": "20",
+    # Paper soak: keep dep-arb entries flowing while capture ratio is repaired (-$19.65 ledger).
+    "PULSE_STOP_DEP_ARB_GUARD_ENABLED": "0",
     "PULSE_ETH_SERIES_ENABLED": "0",
     "PULSE_RESEARCH_LOOP_ENABLED": "1",
     "PULSE_RESEARCH_AUTO_APPLY": "1",
