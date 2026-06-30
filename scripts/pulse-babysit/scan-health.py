@@ -156,13 +156,19 @@ def main() -> int:
             "set PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY=0"))
     dep = status.get("dependency_arbitrage") or {}
     exp = dep.get("experiments") or {}
-    if exp.get("nested_execute_enabled") is True:
-        # nested_implication execution is structurally negative-EV (live capture_ratio < 0; failed
-        # walk-forward). It must stay observe-only (operator lock 2026-06-30) until the Claude dep-arb
-        # verifier proves it can veto the losing fills. Flag if anything re-enabled it.
+    # nested_implication is negative-EV raw, so it may execute ONLY behind an authoritative Claude
+    # verifier (fail-closed + require-verdict). Flag the dangerous UNGATED config (nested on while the
+    # verifier is fail-open / not require-verdict) — that is the -$406 bleed setup.
+    _dav = (status.get("dep_arb_intel") or {}).get("claude_verifier") or {}
+    _nested_on = exp.get("nested_execute_enabled") is True
+    _gated = bool(_dav.get("enabled")) and bool(_dav.get("require_verdict")) and not _dav.get("fail_open")
+    if _nested_on and not _gated:
         issues.append(_issue(
-            "nested_execute_on", "P1", "experiments.nested_execute_enabled=true",
-            "nested_implication bleeds at hold (capture<0); keep PULSE_DEPENDENCY_ARB_NESTED_EXECUTE=0"))
+            "dep_arb_nested_ungated", "P1",
+            "nested_execute on but Claude verifier not authoritative (fail_open=%s require_verdict=%s)"
+            % (_dav.get("fail_open"), _dav.get("require_verdict")),
+            "set PULSE_DEP_ARB_VERIFIER_FAIL_OPEN=0 + PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT=1, "
+            "or PULSE_DEPENDENCY_ARB_NESTED_EXECUTE=0"))
     rejects = dep.get("rejected_by_reason") or {}
     skew_rejects = sum(int(v) for k, v in rejects.items() if str(k).startswith("clock_skew_"))
     actionable = int(dep.get("actionable_detected") or 0)

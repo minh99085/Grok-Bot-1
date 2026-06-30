@@ -8,8 +8,13 @@ Read before any env, gate, deploy, or babysit cycle that alters behavior.
 ## Money path (untouchable)
 
 - Paper-only mode (`live_trading_enabled` must stay OFF)
-- Arb scanner + dep-arb execute (primary profit engines)
-- `PULSE_TICK_SECONDS=15` (fast tick for arb — never 60s)
+- **Single-strategy bot (operator-authorized 2026-06-30): dependency-arb is the SOLE trading lane.**
+  Atomic within-window arb (`PULSE_ARB_ENABLED=0`) and directional (`PULSE_DIRECTIONAL_ENABLED=0`)
+  are disabled to isolate + develop the dep-arb + LLM edge.
+- Dep-arb execute ON; nested-implication runs ONLY behind the authoritative Claude verifier
+  (`PULSE_DEP_ARB_VERIFIER_FAIL_OPEN=0` + `PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT=1`); conjunction
+  (Fréchet floor) is the risk-free core.
+- `PULSE_TICK_SECONDS=15` (fast tick — never 60s)
 - Chainlink RTDS price feed + vol sampler
 - CLOB websocket enabled
 
@@ -35,8 +40,10 @@ Read before any env, gate, deploy, or babysit cycle that alters behavior.
 - `PULSE_TV_FEATURE_SYMBOL=BTCUSD`
 - Webhook secret on VPS — do not rotate without updating TV alerts
 
-## Directional / gates (untouchable — do not loosen OR tighten)
+## Directional / gates (DISABLED 2026-06-30 — dep-arb-only)
 
+- `PULSE_DIRECTIONAL_ENABLED=0` — directional lane OFF (single-strategy bot). The gates below are
+  moot while directional is disabled; kept for when/if directional is re-enabled.
 - `PULSE_BASELINE_COHORT_GATE_ENABLED=1` + 15m fast-lane TTC band
 - `PULSE_DIRECTIONAL_DOWN_ONLY=1`
 - `PULSE_GREEN_PATH_ENABLED=1`

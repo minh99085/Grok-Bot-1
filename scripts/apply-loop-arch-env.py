@@ -151,6 +151,10 @@ UPDATES = {
     # pre-commit-breach check) and drop epsilon to a small fees-only floor. Net effect: capture the
     # near-miss band ONLY when the trade still books guaranteed >0 after realistic sequential fills;
     # reject sub-cost ones. Every booked arb stays guaranteed >= $0 by construction.
+    # Atomic within-window arb DISABLED (operator-authorized 2026-06-30): single-strategy bot —
+    # dependency-arb is the sole trading lane (see PULSE_DIRECTIONAL_ENABLED=0 below). Atomic arb is
+    # risk-free but rare/small and is being set aside to isolate + develop the dep-arb + LLM edge.
+    "PULSE_ARB_ENABLED": "0",
     "PULSE_ARB_FEES": "0.0",
     "PULSE_ARB_EPSILON": "0.003",
     "PULSE_ARB_EPSILON_5M": "0.003",
@@ -159,13 +163,14 @@ UPDATES = {
     # WS3-B: Fréchet conjunction floor — the only dep-arb path that may EXECUTE. It is true
     # risk-free arb (all nested children UP => parent UP), so it stays ON.
     "PULSE_DEPENDENCY_ARB_CONJUNCTION": "1",
-    # Nested-implication execution is OFF (operator-authorized 2026-06-30): live capture_ratio went
-    # NEGATIVE (-0.15 on $2041 theoretical, 125 settled; walk-forward holdout PF 0.886) — the
-    # single-child heuristic books violations that mean-revert before settlement, so it bleeds at
-    # hold (the -$306 dep-arb drawdown). Nested is now observe-only (mid-convergence telemetry still
-    # records it, and the Claude dep-arb verifier stays wired for nested via CONJUNCTION_ONLY=0) so
-    # it can be re-enabled once the verifier has a proven veto track record on real outcomes.
-    "PULSE_DEPENDENCY_ARB_NESTED_EXECUTE": "0",
+    # Nested-implication execution is ON but now GATED by an AUTHORITATIVE Claude verifier
+    # (operator-authorized 2026-06-30 "strengthen dep-arb"). The raw nested heuristic is negative-EV
+    # (capture -0.18, holdout PF 0.78) and previously ran fail-OPEN — Claude only graded after the
+    # fact, so it bled -$406. With FAIL_OPEN=0 + REQUIRE_VERDICT=1 below, a nested fill now requires
+    # an EXPLICIT Claude approve; pending/veto/error => no trade. Claude's counterfactual vetoes have
+    # been correct (avoided -$100), so making it the gatekeeper stops the bleed while keeping the
+    # LLM-leveraged path open to scale as the verifier's veto_quality proves out.
+    "PULSE_DEPENDENCY_ARB_NESTED_EXECUTE": "1",
     # Off: parent books refresh every tick (~15s) so min_parent_book_age_s=120 starved all fills.
     "PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED": "0",
     "PULSE_DEPENDENCY_ARB_MIN_PARENT_BOOK_AGE_S": "120",
@@ -185,16 +190,18 @@ UPDATES = {
     "PULSE_GROK_DEP_CONVERGENCE_MIN_CONVERGE_60S": "0.35",
     "PULSE_GROK_DEP_CONVERGENCE_MAX_CALLS_PER_HOUR": "30",
     "PULSE_DEP_ARB_VERIFIER_ENABLED": "1",
-    # Claude maker-checker on nested + conjunction (fail-open until veto_quality grades).
+    # Claude maker-checker AUTHORITATIVE on nested + conjunction (operator-authorized 2026-06-30):
+    # fail-CLOSED + require-verdict so a dep-arb fill needs an explicit Claude approve (was fail-open
+    # observe-only, which let nested bleed). pending/veto/error => no trade.
     "PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY": "0",
-    "PULSE_DEP_ARB_VERIFIER_FAIL_OPEN": "1",
-    "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT": "0",
+    "PULSE_DEP_ARB_VERIFIER_FAIL_OPEN": "0",
+    "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT": "1",
     "PULSE_DEP_ARB_VERIFIER_MAX_CALLS_PER_HOUR": "40",
-    # WS2 (operator-authorized 2026-06-29): un-pause directional for DOWN-side data COLLECTION only.
-    # Stays DOWN-only (UP hard-blocked) + a small cold-start exploration carve-out so proven-winning
-    # buckets can actually be discovered instead of deadlocking at zero trades. Capped by
-    # PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC. PAPER ONLY.
-    "PULSE_DIRECTIONAL_ENABLED": "1",
+    # Directional DISABLED (operator-authorized 2026-06-30): single-strategy bot — dependency-arb is
+    # the sole trading lane. Directional was DOWN-only data-collection (marginal: WR ~52%, PF ~1.09);
+    # it is turned off so the ledger/P&L isolates dep-arb. (DOWN-only / block-UP flags below are moot
+    # while this is 0.)
+    "PULSE_DIRECTIONAL_ENABLED": "0",
     # Verifier: stop starving cold-start exploration with "when unsure, veto" — exploration trades
     # get a shrunk approve instead of a hard veto so settled data can be collected and the veto's
     # own quality graded. Capability gated; full effect once wired into the follow path.
