@@ -37,3 +37,7 @@ vps_full_reports/baseline_p1/
 !monitoring/
 !monitoring/**
 monitoring/archives/
+
+# Python bytecode caches (never commit compiled artifacts)
+__pycache__/
+*.pyc
