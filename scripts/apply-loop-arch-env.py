@@ -185,7 +185,12 @@ UPDATES = {
     "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.52",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
-    "PULSE_GROK_DEP_CONVERGENCE_ENABLED": "1",
+    # Grok 60s convergence predictor DISABLED (operator-authorized 2026-06-30): live accuracy was 4%
+    # (worse than random — an anti-signal), yet it was fed into the Claude dep-arb verifier as a prior
+    # (engine build_dep_arb_verify_payload grok_convergence=), degrading veto quality. Turning it off
+    # removes the misleading prior AND frees Grok daily budget for the dependency proposer (which was
+    # skipped_budget-starved at 0 validated proposals).
+    "PULSE_GROK_DEP_CONVERGENCE_ENABLED": "0",
     "PULSE_GROK_DEP_CONVERGENCE_GATE": "0",
     "PULSE_GROK_DEP_CONVERGENCE_MIN_CONVERGE_60S": "0.35",
     "PULSE_GROK_DEP_CONVERGENCE_MAX_CALLS_PER_HOUR": "30",
