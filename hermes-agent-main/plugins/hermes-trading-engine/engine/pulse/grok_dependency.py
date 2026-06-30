@@ -134,6 +134,8 @@ Rules:
 - nested_implication: one shorter window nested inside a longer parent (single child).
 - conjunction_implication: TWO OR MORE nested children under the same parent (TRUE Fréchet floor).
 Prefer conjunction_implication when multiple same-series children overlap the parent.
+Use up_mid in the input to spot when parent UP is below a child's UP (nested gap) or below the
+Fréchet floor (conjunction). Only propose when the economic bound could bind.
 Do NOT propose trades. Do NOT invent window ids not in the input list."""
 
 
@@ -143,6 +145,7 @@ def _build_dependency_prompt(windows: list) -> str:
         eid = str(getattr(w, "event_id", "") or "")
         if not eid:
             continue
+        up_mid = getattr(getattr(w, "up_book", None), "mid", None)
         rows.append({
             "event_id": eid,
             "title": str(getattr(w, "title", "") or "")[:120],
@@ -150,6 +153,7 @@ def _build_dependency_prompt(windows: list) -> str:
             "window_seconds": int(getattr(w, "window_seconds", 0) or 0),
             "open_ts": float(getattr(w, "open_ts", 0) or 0),
             "close_ts": float(getattr(w, "close_ts", 0) or 0),
+            "up_mid": round(float(up_mid), 4) if up_mid is not None else None,
         })
     if not rows:
         return ""

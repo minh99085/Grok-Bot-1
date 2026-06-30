@@ -28,6 +28,7 @@ def build_dep_arb_verify_payload(
     parent_book_age_s: Optional[float] = None,
     child_book_age_s: Optional[float] = None,
     grok_dependency: Optional[dict] = None,
+    grok_convergence: Optional[dict] = None,
 ) -> dict:
     """Compact context for the dep-arb verifier (no maker reasoning)."""
     vdict = violation.to_dict() if hasattr(violation, "to_dict") else dict(violation or {})
@@ -52,6 +53,7 @@ def build_dep_arb_verify_payload(
             "child": child_book_age_s,
         },
         "grok_dependency": grok_dependency or {},
+        "grok_convergence_prior": grok_convergence or {},
     }
 
 

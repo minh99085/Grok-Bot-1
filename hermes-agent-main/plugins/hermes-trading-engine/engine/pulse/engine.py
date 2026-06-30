@@ -304,6 +304,10 @@ class PulseConfig:
     stop_sharpe_min_samples: int = 20
     grok_dependency_enabled: bool = False       # advisory dependency screener (shadow)
     grok_dependency_interval_s: float = 180.0
+    grok_dep_convergence_enabled: bool = False
+    grok_dep_convergence_gate_enabled: bool = False
+    grok_dep_convergence_min_converge_60s: float = 0.35
+    grok_dep_convergence_max_calls_per_hour: int = 30
     dep_arb_verifier_enabled: bool = True       # Claude maker-checker on conjunction binds
     dep_arb_verifier_conjunction_only: bool = True
     dep_arb_verifier_fail_open: bool = True
@@ -778,6 +782,16 @@ class PulseConfig:
             grok_dependency_enabled=str(os.getenv("PULSE_GROK_DEPENDENCY_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             grok_dependency_interval_s=_envf("PULSE_GROK_DEPENDENCY_INTERVAL_S", 180.0),
+            grok_dep_convergence_enabled=str(
+                os.getenv("PULSE_GROK_DEP_CONVERGENCE_ENABLED", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            grok_dep_convergence_gate_enabled=str(
+                os.getenv("PULSE_GROK_DEP_CONVERGENCE_GATE", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            grok_dep_convergence_min_converge_60s=_envf(
+                "PULSE_GROK_DEP_CONVERGENCE_MIN_CONVERGE_60S", 0.35),
+            grok_dep_convergence_max_calls_per_hour=int(
+                _envf("PULSE_GROK_DEP_CONVERGENCE_MAX_CALLS_PER_HOUR", 30)),
             dep_arb_verifier_enabled=str(
                 os.getenv("PULSE_DEP_ARB_VERIFIER_ENABLED", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -1303,6 +1317,8 @@ class PulseEngine:
         self.grok_decider = None
         self.grok_news = None
         self.grok_dep_screener = None
+        self.grok_dep_convergence = None
+        self._obs_completed_n = 0
         self._grok_pending: list = []             # pending decision grades (decision_id/price0/close)
         self._grok_tv_fp: dict = {}               # decision_id -> last MTF fingerprint (refresh Grok)
         self._grok_entry_band_seen: set = set()   # windows that got entry-band Grok refresh
@@ -1322,6 +1338,7 @@ class PulseEngine:
                         or bool(self.cfg.grok_signal_analyst_enabled)
                         or bool(self.cfg.grok_signal_predictor_enabled)
                         or bool(self.cfg.grok_dependency_enabled)
+                        or bool(self.cfg.grok_dep_convergence_enabled)
                         or decider_on)
             if any_grok and xai_key():
                 self.grok_budget = GrokBudget(
@@ -1332,7 +1349,9 @@ class PulseEngine:
                                         "overlay": self.cfg.grok_overlay_max_calls_per_hour,
                                         "decider": self.cfg.grok_decider_max_calls_per_hour,
                                         "news": 40,
-                                        "dependency": 12})
+                                        "dependency": 12,
+                                        "dep_convergence": (
+                                            self.cfg.grok_dep_convergence_max_calls_per_hour)})
             if bool(self.cfg.grok_overlay_enabled) and xai_key():
                 from engine.pulse.overlay import GrokEventOverlay
                 self.overlay = GrokEventOverlay(
@@ -1377,10 +1396,15 @@ class PulseEngine:
                     windows_fn=lambda: self.market.active_windows(),
                     budget=self.grok_budget,
                     interval_s=self.cfg.grok_dependency_interval_s).start()
+            if bool(self.cfg.grok_dep_convergence_enabled) and xai_key():
+                from engine.pulse.grok_dep_convergence import GrokDepConvergencePrior
+                self.grok_dep_convergence = GrokDepConvergencePrior(
+                    budget=self.grok_budget).start()
         except Exception:  # noqa: BLE001 — Grok never blocks startup
             logger.exception("grok init failed; continuing as pure quant")
             self.grok_budget = self.overlay = self.grok_analyst = self.grok_predictor = None
-            self.grok_decider = self.grok_news = self.grok_dep_screener = None
+            self.grok_decider = self.grok_news = None
+            self.grok_dep_screener = self.grok_dep_convergence = None
         # ---- #2 compounding lessons + #3 loop registry ----
         from engine.pulse.lessons import LessonsBook
         from engine.pulse.loops import LoopRegistry
@@ -1690,6 +1714,9 @@ class PulseEngine:
             self.grok_decider.load_state(acct.get("grok_decider") or {})
         if self.grok_news is not None:
             self.grok_news.load_state(acct.get("grok_news") or {})
+        if self.grok_dep_convergence is not None:
+            self.grok_dep_convergence.load_state(acct.get("grok_dep_convergence") or {})
+            self._obs_completed_n = int(acct.get("grok_dep_obs_completed_n") or 0)
         self._grok_pending = list(acct.get("grok_pending") or [])
         self._verifier_pending = list(acct.get("verifier_pending") or [])
         self._recent_windows = list(acct.get("recent_windows") or [])
@@ -3005,6 +3032,8 @@ class PulseEngine:
                 "max_child_window_age_s": self.cfg.dependency_arb_max_child_window_age_s,
             },
             "mid_convergence": (obs.report() if obs is not None else {}),
+            "grok_convergence_enabled": bool(self.cfg.grok_dep_convergence_enabled),
+            "grok_convergence_gate_enabled": bool(self.cfg.grok_dep_convergence_gate_enabled),
         }
         self.dep_arb_ledger.experiments_report = rep["experiments"]
         return rep
@@ -4229,10 +4258,14 @@ class PulseEngine:
             "dependency_proposals": 0}
         report["dep_arb_intel"] = {
             "grok_dependency": report.get("grok_dependency") or {},
+            "grok_convergence": (self.grok_dep_convergence.report()
+                                 if self.grok_dep_convergence is not None
+                                 else {"enabled": False}),
             "claude_verifier": (self.dep_arb_verifier.report()
                                 if self.dep_arb_verifier is not None
                                 else {"enabled": False}),
-            "note": ("Grok proposes constraints (observe); Claude vets conjunction binds only."),
+            "note": ("Grok proposes constraints + 60s convergence prior (observe); "
+                     "Claude vets conjunction binds only."),
         }
         report["bregman_projection"] = getattr(self, "_bregman_projection_report", None) or {
             "enabled": False}
@@ -4689,12 +4722,49 @@ class PulseEngine:
         by_id = {w.event_id: w for w in open_w}
         if obs is not None and self.cfg.dependency_arb_mid_convergence_observe:
             obs.advance(open_w, now=now)
+            if self.grok_dep_convergence is not None:
+                completed = list(getattr(obs, "_completed", None) or [])
+                n_done = len(completed)
+                if n_done > self._obs_completed_n:
+                    for row in completed[self._obs_completed_n:]:
+                        readings = row.get("readings") or {}
+                        r60 = readings.get(60.0) or readings.get(60)
+                        if r60 is None:
+                            continue
+                        gkey = "grok_conv:%s:%s:%s" % (
+                            row.get("parent_key", ""), row.get("child_key", ""),
+                            row.get("constraint_type", ""))
+                        self.grok_dep_convergence.grade(
+                            gkey, converged_60s=bool(r60.get("converged")))
+                    self._obs_completed_n = n_done
             for v in violations:
                 if not v.actionable:
                     continue
                 child_id = (v.child_window_keys or [None])[0]
                 obs.snap(v, parent=by_id.get(v.parent_window_key),
                          child=by_id.get(child_id) if child_id else None, now=now)
+        if self.grok_dep_convergence is not None:
+            from engine.pulse.dependency_arb_experiments import _book_age_s
+            from engine.pulse.grok_dep_convergence import (
+                build_convergence_context, violation_prior_key,
+            )
+            mid_conv = (obs.report() if obs is not None else {})
+            for v in violations:
+                if not v.actionable:
+                    continue
+                parent = by_id.get(v.parent_window_key)
+                child_id = (v.child_window_keys or [None])[0]
+                child = by_id.get(child_id) if child_id else None
+                if parent is None or child is None:
+                    continue
+                ctx = build_convergence_context(
+                    v, parent, child, now=now,
+                    parent_book_age_s=_book_age_s(getattr(parent, "up_book", None), now),
+                    child_book_age_s=_book_age_s(getattr(child, "up_book", None), now),
+                    mid_convergence_empirical=mid_conv.get("by_horizon") or {},
+                )
+                self.grok_dep_convergence.request(violation_prior_key(v), ctx)
+                self.loops.beat("grok_dep_convergence", now)
         if self.cfg.dependency_arb_mid_exit_enabled:
             from engine.pulse.dependency_arb_experiments import try_mid_exit_positions
             try_mid_exit_positions(
@@ -4773,6 +4843,10 @@ class PulseEngine:
                         build_dep_arb_verify_payload, shrink_dep_arb_trade)
                     from engine.pulse.dependency_arb_experiments import _book_age_s
                     did = dav.decision_id(v, child_key=str(child_id or ""))
+                    grok_conv_prior = None
+                    if self.grok_dep_convergence is not None:
+                        from engine.pulse.grok_dep_convergence import violation_prior_key
+                        grok_conv_prior = self.grok_dep_convergence.get(violation_prior_key(v))
                     payload = build_dep_arb_verify_payload(
                         v, trade,
                         bregman_diag=bdiag,
@@ -4782,6 +4856,7 @@ class PulseEngine:
                         parent_book_age_s=_book_age_s(getattr(parent, "up_book", None), now),
                         child_book_age_s=_book_age_s(getattr(child, "up_book", None), now),
                         grok_dependency=getattr(self, "_grok_dependency_report", None),
+                        grok_convergence=grok_conv_prior,
                     )
                     dav.request(did, payload)
                     self.loops.beat("dep_arb_verifier", now)
@@ -4806,6 +4881,21 @@ class PulseEngine:
                         "reason": str(verdict.get("reason") or "")[:200],
                         "pending": bool(verdict.get("pending")),
                     }
+            if trade and self.grok_dep_convergence is not None:
+                if bool(self.cfg.grok_dep_convergence_gate_enabled):
+                    from engine.pulse.grok_dep_convergence import (
+                        convergence_prior_passes_gate, violation_prior_key,
+                    )
+                    prior = self.grok_dep_convergence.get(violation_prior_key(v))
+                    gate_ok, gate_reason = convergence_prior_passes_gate(
+                        prior,
+                        min_converge_60s=float(self.cfg.grok_dep_convergence_min_converge_60s),
+                    )
+                    if not gate_ok:
+                        self.dep_arb_ledger.rejected_by_reason[gate_reason] = (
+                            int(self.dep_arb_ledger.rejected_by_reason.get(
+                                gate_reason, 0) or 0) + 1)
+                        trade = None
             if trade and self.dep_arb_ledger.book(trade, now=now):
                 self.loops.beat("dependency_arb", now)
 
@@ -4975,6 +5065,11 @@ class PulseEngine:
                    stop_condition="conjunction approve/veto",
                    status_fn=(lambda: self.dep_arb_verifier.report())
                    if self.dep_arb_verifier else None)
+        r.register("grok_dep_convergence", role="intel(dep-arb)", trigger="per_actionable_violation",
+                   skill="grok_dep_convergence.py", verifier="grok",
+                   stop_condition="accuracy_60s vs mid_observer",
+                   status_fn=(lambda: self.grok_dep_convergence.report())
+                   if self.grok_dep_convergence else None)
         r.register("execution", role="execute", trigger="per_decision",
                    skill="execution-quality gate (authoritative)", stop_condition="fill or reject")
         if self.arb_ledger is not None:
@@ -5315,6 +5410,11 @@ class PulseEngine:
                                                if self.grok_decider is not None else {}),
                               "grok_news": (self.grok_news.to_state()
                                             if self.grok_news is not None else {}),
+                              "grok_dep_convergence": (
+                                  self.grok_dep_convergence.to_state()
+                                  if self.grok_dep_convergence is not None else {}),
+                              "grok_dep_obs_completed_n": int(
+                                  getattr(self, "_obs_completed_n", 0) or 0),
                               "grok_pending": self._grok_pending[-2000:],
                               "verifier_pending": self._verifier_pending[-2000:],
                               "recent_windows": self._recent_windows[-40:],

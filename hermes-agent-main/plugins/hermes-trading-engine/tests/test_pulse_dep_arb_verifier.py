@@ -31,6 +31,19 @@ def test_build_payload_includes_lane_and_trade():
     assert payload["experiments"]["mid_exit_enabled"] is True
 
 
+def test_build_payload_includes_grok_convergence_prior():
+    viol = DependencyViolation(
+        constraint_type="conjunction_implication",
+        parent_window_key="p", child_window_keys=["c1"],
+        description="t", parent_up_mid=0.40, child_up_mids=[0.55],
+        implied_bound=0.55, violation_magnitude=0.15,
+    )
+    trade = {"entry_vwap": 0.41, "cost_usd": 10.0}
+    grok_conv = {"converge_60s": 0.6, "hold_to_resolution_risk": "med", "pending": False}
+    payload = build_dep_arb_verify_payload(viol, trade, grok_convergence=grok_conv)
+    assert payload["grok_convergence_prior"]["converge_60s"] == 0.6
+
+
 def test_shrink_trade_never_enlarges():
     trade = {"cost_usd": 50.0, "shares": 100.0, "expected_profit_usd": 10.0}
     out = shrink_dep_arb_trade(trade, 0.5)
