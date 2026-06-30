@@ -1323,6 +1323,7 @@ class PulseEngine:
         self._grok_tv_fp: dict = {}               # decision_id -> last MTF fingerprint (refresh Grok)
         self._grok_entry_band_seen: set = set()   # windows that got entry-band Grok refresh
         self._verifier_pending: list = []        # pending verifier counterfactual grades at window close
+        self._dep_arb_verifier_pending: list = []  # dep-arb verifier veto counterfactuals at parent close
         self._recent_windows: list = []           # rolling recent BTC 5m window outcomes (for Grok)
         import random as _random
         self._grok_rng = _random.Random()         # exploration sampler (follow-mode data gathering)
@@ -1719,6 +1720,7 @@ class PulseEngine:
             self._obs_completed_n = int(acct.get("grok_dep_obs_completed_n") or 0)
         self._grok_pending = list(acct.get("grok_pending") or [])
         self._verifier_pending = list(acct.get("verifier_pending") or [])
+        self._dep_arb_verifier_pending = list(acct.get("dep_arb_verifier_pending") or [])
         self._recent_windows = list(acct.get("recent_windows") or [])
         self.lessons.load_state(acct.get("lessons") or {})
         self.trade_history.load_state(acct.get("trade_history") or {})
@@ -1833,6 +1835,7 @@ class PulseEngine:
                         tv_feature = {**feat, "grok_p_up": gp.get("p_up")}
         self._grade_grok_decisions(now)   # grade prior Grok decisions vs realized window close
         self._grade_verifier_decisions(now)  # counterfactual grade for vetoed (and shadow) setups
+        self._grade_dep_arb_verifier_decisions(now)  # dep-arb verifier veto counterfactuals
         self._grade_cex_lead(now)         # grade prior CEX-lead signals vs realized window close
         self._grade_market_benchmark(now) # grade model-vs-market accuracy (learning-blend gate)
         if self.arb_ledger is not None:   # settle risk-free arb positions at window close (deterministic)
@@ -2979,13 +2982,83 @@ class PulseEngine:
         did = str(pos.get("decision_id") or "")
         if not did:
             return
-        acted = bool((pos.get("verifier") or {}).get("approved", True))
+        verifier = pos.get("verifier") or {}
+        acted = bool(verifier.get("approved", True))
         self.dep_arb_verifier.grade(
             did,
             won=bool(pos.get("won")),
             pnl=float(pos.get("realized_profit_usd") or 0),
             acted=acted,
         )
+        self._maybe_request_dep_arb_verifier_research()
+
+    def _schedule_dep_arb_verifier_counterfactual(
+        self, decision_id: str, trade: dict, *, close_ts: float,
+    ) -> None:
+        """Queue a vetoed conjunction bind for counterfactual P&L at parent window close."""
+        if not decision_id or self.dep_arb_verifier is None or not trade:
+            return
+        for p in self._dep_arb_verifier_pending:
+            if p.get("decision_id") == decision_id:
+                return
+        snap = {
+            "decision_id": decision_id,
+            "close_ts": float(close_ts),
+            "parent_market_id": trade.get("parent_market_id"),
+            "parent_window_key": trade.get("parent_window_key"),
+            "shares": trade.get("shares"),
+            "cost_usd": trade.get("cost_usd"),
+            "entry_vwap": trade.get("entry_vwap"),
+            "s_open": trade.get("s_open"),
+        }
+        self._dep_arb_verifier_pending.append(snap)
+
+    def _grade_dep_arb_verifier_decisions(self, now: float) -> None:
+        """Grade vetoed dep-arb verifier verdicts vs parent-UP resolution at close."""
+        if not self._dep_arb_verifier_pending or self.dep_arb_verifier is None:
+            return
+        from engine.pulse.dependency_arb import outcome_settled_pnl
+        still = []
+        graded_any = False
+        for p in self._dep_arb_verifier_pending:
+            close_ts = float(p.get("close_ts") or 0)
+            if now < close_ts:
+                still.append(p)
+                continue
+            outcome_up, _src = self._resolve_dep_arb_position(p, now)
+            if outcome_up is None:
+                if now <= close_ts + float(self.cfg.settle_grace_s) + 120.0:
+                    still.append(p)
+                continue
+            trade = {
+                "shares": p.get("shares"),
+                "cost_usd": p.get("cost_usd"),
+                "entry_vwap": p.get("entry_vwap"),
+            }
+            pnl = outcome_settled_pnl(trade, outcome_up=bool(outcome_up))
+            self.dep_arb_verifier.grade(
+                str(p.get("decision_id") or ""),
+                won=bool(outcome_up),
+                pnl=float(pnl or 0),
+                acted=False,
+            )
+            graded_any = True
+        self._dep_arb_verifier_pending = still[-500:]
+        if graded_any:
+            self._maybe_request_dep_arb_verifier_research()
+
+    def _maybe_request_dep_arb_verifier_research(self) -> None:
+        """Nudge research meta-loop when dep-arb verifier has enough graded outcomes."""
+        if self.research_loop is None or self.dep_arb_verifier is None:
+            return
+        try:
+            vq = (self.dep_arb_verifier.report().get("veto_quality") or {})
+            n = int(vq.get("n") or 0)
+            min_n = int(vq.get("min_samples") or 10)
+            if n >= min_n:
+                self.research_loop.request_run("dep_arb_verifier_grade")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _resolve_dep_arb_position(self, pos: dict, now: float) -> "tuple[Optional[bool], str]":
         """Resolve parent-UP outcome for dependency-arb settlement (Polymarket first, RTDS proxy)."""
@@ -4870,6 +4943,8 @@ class PulseEngine:
                         self.dep_arb_ledger.rejected_by_reason["dep_arb_verifier_veto"] = (
                             int(self.dep_arb_ledger.rejected_by_reason.get(
                                 "dep_arb_verifier_veto", 0) or 0) + 1)
+                        self._schedule_dep_arb_verifier_counterfactual(
+                            did, trade, close_ts=float(parent.close_ts))
                         continue
                     if verdict.get("approve"):
                         msf = float(verdict.get("max_size_fraction", 1.0) or 1.0)
@@ -5417,6 +5492,8 @@ class PulseEngine:
                                   getattr(self, "_obs_completed_n", 0) or 0),
                               "grok_pending": self._grok_pending[-2000:],
                               "verifier_pending": self._verifier_pending[-2000:],
+                              "dep_arb_verifier_pending": (
+                                  list(self._dep_arb_verifier_pending)[-500:]),
                               "recent_windows": self._recent_windows[-40:],
                               "verifier": (self.verifier.to_state() if self.verifier is not None
                                            else {}),

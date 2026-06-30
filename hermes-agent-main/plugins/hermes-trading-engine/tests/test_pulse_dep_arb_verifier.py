@@ -52,6 +52,25 @@ def test_shrink_trade_never_enlarges():
     assert out["verifier_size_fraction"] == 0.5
 
 
+def test_dep_arb_verifier_grade_veto_counterfactual():
+    dav = ClaudeDepArbVerifier(
+        verify_fn=lambda p: {"approve": False, "reason": "bleed"},
+        enabled=True,
+    )
+    dav.start()
+    dav.request("dep_arb:p:c:conjunction_implication", {"lane": "dependency_arbitrage"})
+    import time
+    for _ in range(30):
+        if dav.get("dep_arb:p:c:conjunction_implication"):
+            break
+        time.sleep(0.05)
+    dav.grade("dep_arb:p:c:conjunction_implication", won=True, pnl=6.0, acted=False)
+    rep = dav.report()
+    assert rep["veto_quality"]["n"] == 1
+    assert rep["veto_quality"]["vetoed_would_have_pnl_usd"] == 6.0
+    dav.stop()
+
+
 def test_verifier_veto_blocks_approve():
     def _veto(_payload):
         return {"approve": False, "max_size_fraction": 0.0, "confidence": 0.9, "reason": "high_entry"}

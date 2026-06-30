@@ -22,6 +22,62 @@ from engine.pulse.claude_client import claude_chat
 GATEABLE_DIMS = ("hurst_regime", "zscore_bucket", "ttc_bucket", "confidence_tier", "spread_bucket",
                  "depth_bucket", "markov_state", "edge_quality_bucket", "stale_divergence")
 
+# Whitelisted dep-arb knobs the research loop may recommend (bounded; engine auto-apply stays off).
+DEP_ARB_KNOBS = (
+    "PULSE_DEPENDENCY_ARB_NESTED_EXECUTE",
+    "PULSE_DEPENDENCY_ARB_CONJUNCTION",
+    "PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED",
+    "PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED",
+    "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S",
+    "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP",
+    "PULSE_GROK_DEP_CONVERGENCE_GATE",
+    "PULSE_GROK_DEP_CONVERGENCE_MIN_CONVERGE_60S",
+    "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT",
+)
+
+
+def build_dep_arb_research_block(report: dict) -> dict:
+    """Compact dep-arb experiment + intel slice for the research meta-loop prompt."""
+    report = report or {}
+    dep = report.get("dependency_arbitrage") or {}
+    intel = report.get("dep_arb_intel") or {}
+    exp = dep.get("experiments") or {}
+    mid = exp.get("mid_convergence") or {}
+    grok_conv = intel.get("grok_convergence") or {}
+    verifier = intel.get("claude_verifier") or {}
+    booking = dep.get("booking") or {}
+    return {
+        "enabled": dep.get("enabled", True),
+        "settled": dep.get("settled"),
+        "executed": dep.get("executed"),
+        "realized_profit_usd": dep.get("realized_profit_usd"),
+        "rejected_by_reason": dep.get("rejected_by_reason") or {},
+        "booking": {
+            "settled_n": booking.get("settled_n"),
+            "capture_ratio": booking.get("capture_ratio"),
+            "theoretical_settled_usd": booking.get("theoretical_settled_usd"),
+        },
+        "experiments": {
+            "nested_execute_enabled": exp.get("nested_execute_enabled"),
+            "clock_skew_enabled": exp.get("clock_skew_enabled"),
+            "mid_exit_enabled": exp.get("mid_exit_enabled"),
+            "mid_exit_horizon_s": exp.get("mid_exit_horizon_s"),
+            "max_entry_vwap": exp.get("max_entry_vwap"),
+            "grok_convergence_enabled": exp.get("grok_convergence_enabled"),
+            "grok_convergence_gate_enabled": exp.get("grok_convergence_gate_enabled"),
+            "mid_convergence_by_horizon": mid.get("by_horizon") or {},
+        },
+        "intel": {
+            "grok_dependency_validated": (
+                (intel.get("grok_dependency") or {}).get("deterministic_validated_dependencies")),
+            "grok_convergence_accuracy_60s": grok_conv.get("accuracy_60s"),
+            "grok_convergence_scored_60s": grok_conv.get("scored_60s"),
+            "verifier_veto_quality": verifier.get("veto_quality"),
+            "verifier_approved_settled": verifier.get("approved_settled"),
+        },
+        "allowed_knobs": list(DEP_ARB_KNOBS),
+    }
+
 
 def _clean_context(x) -> Optional[str]:
     """Normalize a model-proposed context to a clean ``dim=bucket`` (strip prose like
@@ -45,34 +101,51 @@ def make_research_fn(*, model: Optional[str] = None, timeout_s: float = 30.0, ch
     system = ("You are a quant research lead reviewing a PAPER BTC 5-minute up/down bot's full "
               "performance report + its compounding LESSONS. Be data-driven and skeptical: 5-min BTC "
               "direction is near-efficient, so do NOT assume edge that the data does not show. "
-              "Pay special attention to dependency_arbitrage (LCMM dep-arb): experiments block, "
-              "booking.capture_ratio, mid_convergence.by_horizon, dep_arb_intel.claude_verifier "
-              "veto_quality, and rejected_by_reason. Recommend concrete next steps: which contexts "
-              "have a real, sample-backed edge to EXPLOIT, which to AVOID, small bounded knob nudges "
-              "(including PULSE_DEPENDENCY_ARB_* only when report evidence supports), and new lessons. "
-              "Never recommend going live.")
+              "Pay special attention to dependency_arbitrage (LCMM dep-arb). The prompt includes a "
+              "DEP_ARB_EXPERIMENTS block — use it as the primary dep-arb evidence. Key signals: "
+              "(1) experiments.nested_execute vs conjunction-only execute, clock_skew, mid_exit; "
+              "(2) mid_convergence_by_horizon especially 60s converged_rate vs mid_exit_horizon_s; "
+              "(3) booking.capture_ratio vs theoretical_settled_usd (hold-to-resolution bleed); "
+              "(4) intel.verifier_veto_quality + approved_settled (Claude maker-checker grades at "
+              "settle); (5) intel.grok_convergence_accuracy_60s vs deterministic mid_observer; "
+              "(6) rejected_by_reason counts (verifier_veto, entry_vwap_above_cap, bucket_bleeding). "
+              "Recommend concrete next steps: directional exploit/avoid contexts, bounded knob nudges "
+              "ONLY from allowed_knobs when sample-backed, and new lessons. Never recommend going live.")
 
     def _research(report: dict) -> Optional[dict]:
+        dep_focus = build_dep_arb_research_block(report)
         prompt = ("Analyze and respond with STRICT JSON ONLY: {\"summary\":\"<2-3 sentences>\","
                   "\"exploit_contexts\":[\"dim=bucket\"],\"avoid_contexts\":[\"dim=bucket\"],"
                   "\"knob_recommendations\":[{\"knob\":\"<name>\",\"value\":<num>,\"reason\":\"<short>\"}],"
-                  "\"new_lessons\":[{\"key\":\"<unique>\",\"rule\":\"<short>\"}]}.\n"
+                  "\"new_lessons\":[{\"key\":\"<unique>\",\"rule\":\"<short>\"}],"
+                  "\"dep_arb_next_experiment\":\"<one sentence or null>\"}.\n"
                   "For avoid_contexts/exploit_contexts use ONLY these dimensions and a BARE "
                   "'dim=bucket' (NO prose, NO stats in the string): " + ", ".join(GATEABLE_DIMS)
                   + ". Example: \"avoid_contexts\":[\"hurst_regime=trending\",\"ttc_bucket=<60s\"].\n"
-                  "REPORT: " + json.dumps(report, default=str)[:12000])
+                  "For knob_recommendations on dep-arb, knob MUST be one of allowed_knobs in "
+                  "DEP_ARB_EXPERIMENTS and value must be 0/1 for booleans.\n"
+                  "DEP_ARB_EXPERIMENTS: " + json.dumps(dep_focus, default=str)[:4000] + "\n"
+                  "REPORT: " + json.dumps(report, default=str)[:10000])
         d = _parse_json(chat(prompt, model=model, timeout_s=timeout_s, box=box, system=system,
                              max_tokens=1500))
         if not d:
             return None
         ex = [c for c in (_clean_context(x) for x in (d.get("exploit_contexts") or [])) if c][:10]
         av = [c for c in (_clean_context(x) for x in (d.get("avoid_contexts") or [])) if c][:10]
+        knobs = []
+        allowed = set(DEP_ARB_KNOBS)
+        for r in (d.get("knob_recommendations") or []):
+            if not isinstance(r, dict):
+                continue
+            knob = str(r.get("knob") or "")[:60]
+            if knob.startswith("PULSE_") and knob not in allowed:
+                continue
+            knobs.append({"knob": knob[:40], "value": r.get("value"),
+                          "reason": str(r.get("reason"))[:160]})
         return {"summary": str(d.get("summary", ""))[:1000],
                 "exploit_contexts": ex, "avoid_contexts": av,
-                "knob_recommendations": [{"knob": str(r.get("knob"))[:40], "value": r.get("value"),
-                                          "reason": str(r.get("reason"))[:160]}
-                                         for r in (d.get("knob_recommendations") or [])
-                                         if isinstance(r, dict)][:8],
+                "knob_recommendations": knobs[:8],
+                "dep_arb_next_experiment": str(d.get("dep_arb_next_experiment") or "")[:400] or None,
                 "new_lessons": [{"key": str(x.get("key"))[:60], "rule": str(x.get("rule"))[:300]}
                                 for x in (d.get("new_lessons") or []) if isinstance(x, dict)][:8]}
     return _research
