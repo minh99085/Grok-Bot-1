@@ -1,1 +1,1 @@
-validation_light ΓÇö integrity smoke checks global_reconciled=True failed_checks=[] paper_only=True settled=6 accepted=1 payoff_guards={"rejected_tiny_upside": 0, "rejected_bad_reward_to_risk": 0, "rejected_high_entry_insufficient_margin": 0}
+validation_light ΓÇö integrity smoke checks global_reconciled=True failed_checks=[] paper_only=True settled=9 accepted=4 payoff_guards={"rejected_tiny_upside": 0, "rejected_bad_reward_to_risk": 0, "rejected_high_entry_insufficient_margin": 0}
