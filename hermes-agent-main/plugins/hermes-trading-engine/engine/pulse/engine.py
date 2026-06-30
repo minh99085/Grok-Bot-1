@@ -289,6 +289,9 @@ class PulseConfig:
     dependency_arb_mid_convergence_observe: bool = True
     dependency_arb_mid_convergence_horizons_s: tuple = (30.0, 60.0, 120.0)
     dependency_arb_experiment_auto_apply: bool = True
+    dependency_arb_mid_exit_enabled: bool = False
+    dependency_arb_mid_exit_horizon_s: float = 60.0
+    dependency_arb_max_entry_vwap: float = 0.52
     bregman_projection_enabled: bool = False  # WS4 Layer 2 diagnostics
     bregman_trade_authority: bool = False     # Bregman sizes Lane B when True
     bregman_alpha: float = 0.9
@@ -744,6 +747,13 @@ class PulseConfig:
             dependency_arb_experiment_auto_apply=str(
                 os.getenv("PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            dependency_arb_mid_exit_enabled=str(
+                os.getenv("PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            dependency_arb_mid_exit_horizon_s=_envf(
+                "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S", 60.0),
+            dependency_arb_max_entry_vwap=_envf(
+                "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP", 0.52),
             bregman_projection_enabled=str(os.getenv("PULSE_BREGMAN_PROJECTION_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             bregman_trade_authority=str(os.getenv("PULSE_BREGMAN_TRADE_AUTHORITY", "0"))
@@ -2931,6 +2941,9 @@ class PulseEngine:
         rep["experiments"] = {
             "nested_execute_enabled": bool(self.cfg.dependency_arb_nested_execute),
             "clock_skew_enabled": bool(self.cfg.dependency_arb_clock_skew_enabled),
+            "mid_exit_enabled": bool(self.cfg.dependency_arb_mid_exit_enabled),
+            "mid_exit_horizon_s": float(self.cfg.dependency_arb_mid_exit_horizon_s),
+            "max_entry_vwap": float(self.cfg.dependency_arb_max_entry_vwap),
             "clock_skew_params": {
                 "min_parent_book_age_s": self.cfg.dependency_arb_min_parent_book_age_s,
                 "max_child_book_age_s": self.cfg.dependency_arb_max_child_book_age_s,
@@ -4620,7 +4633,16 @@ class PulseEngine:
                 child_id = (v.child_window_keys or [None])[0]
                 obs.snap(v, parent=by_id.get(v.parent_window_key),
                          child=by_id.get(child_id) if child_id else None, now=now)
+        if self.cfg.dependency_arb_mid_exit_enabled:
+            from engine.pulse.dependency_arb_experiments import try_mid_exit_positions
+            try_mid_exit_positions(
+                self.dep_arb_ledger, by_id, now=now,
+                horizon_s=float(self.cfg.dependency_arb_mid_exit_horizon_s),
+                enabled=True,
+            )
         if not self.dep_arb_ledger.execute_enabled:
+            return
+        if self.stop_monitor.is_halted("dependency_arbitrage"):
             return
         for v in violations:
             if not v.actionable:
@@ -4665,6 +4687,13 @@ class PulseEngine:
                 walk_forward_passed=bool(wf.get("passed")),
                 s_open=snap,
             )
+            if trade:
+                max_entry = float(self.cfg.dependency_arb_max_entry_vwap)
+                if float(trade.get("entry_vwap") or 0) > max_entry + 1e-9:
+                    self.dep_arb_ledger.rejected_by_reason["entry_vwap_above_cap"] = (
+                        int(self.dep_arb_ledger.rejected_by_reason.get(
+                            "entry_vwap_above_cap", 0) or 0) + 1)
+                    trade = None
             if trade:
                 from engine.pulse.dependency_arb import dep_arb_bucket_bleeding
                 halted, halt_reason = dep_arb_bucket_bleeding(

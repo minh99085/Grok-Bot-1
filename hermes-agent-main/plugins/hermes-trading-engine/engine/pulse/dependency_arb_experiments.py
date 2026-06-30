@@ -262,6 +262,78 @@ class DepArbMidConvergenceObserver:
                 continue
 
 
+def gap_converged(gap0: float, gap_now: float, *, convergence_frac: float = 0.5) -> bool:
+    if gap0 <= 1e-9:
+        return gap_now <= 0
+    return float(gap_now) < float(gap0) * float(convergence_frac)
+
+
+def try_mid_exit_positions(
+    ledger,
+    windows_by_id: dict,
+    *,
+    now: float,
+    horizon_s: float = 60.0,
+    convergence_frac: float = 0.5,
+    enabled: bool = True,
+) -> int:
+    """Paper mid-exit: sell parent-UP when child-parent gap mean-reverts after horizon."""
+    if not enabled or ledger is None:
+        return 0
+    from engine.pulse.dependency_arb import _up_mid
+    from engine.pulse.execution_gate import vwap_sell_bids
+
+    n = 0
+    for pk, p in list((ledger.positions or {}).items()):
+        if p.get("status") != "open":
+            continue
+        entry_ts = float(p.get("entry_ts") or 0)
+        if entry_ts <= 0 or float(now) - entry_ts < float(horizon_s):
+            continue
+        child_key = str(p.get("child_window_key") or "")
+        parent = windows_by_id.get(pk)
+        child = windows_by_id.get(child_key) if child_key else None
+        if parent is None or child is None:
+            continue
+        p_mid = _up_mid(parent)
+        c_mid = _up_mid(child)
+        if p_mid is None or c_mid is None:
+            continue
+        gap0 = float(p.get("violation_magnitude") or 0)
+        g_now = float(c_mid) - float(p_mid)
+        if not gap_converged(gap0, g_now, convergence_frac=convergence_frac):
+            continue
+        book = getattr(parent, "up_book", None)
+        bids = getattr(book, "bids", None) if book is not None else None
+        if not bids:
+            continue
+        shares = float(p.get("shares") or 0)
+        cost = float(p.get("cost_usd") or 0)
+        if shares <= 0 or cost <= 0:
+            continue
+        vwap, proceeds, sold, full = vwap_sell_bids(bids, shares)
+        if vwap is None or not full or sold < shares * 0.99:
+            continue
+        profit = round(float(proceeds) - cost, 6)
+        p["status"] = "settled"
+        p["settlement_source"] = "mid_exit_convergence"
+        p["outcome_settled"] = False
+        p["mid_exit"] = True
+        p["exit_vwap"] = round(float(vwap), 6)
+        p["exit_ts"] = float(now)
+        p["realized_profit_usd"] = profit
+        p["won"] = profit > 0
+        p["heuristic_profit_usd"] = profit
+        if getattr(ledger, "calibration", None) is not None:
+            ledger.calibration.record_settled(
+                float(p.get("entry_vwap") or 0), profit, profit > 0)
+        ledger.realized_profit_usd = round(
+            float(getattr(ledger, "realized_profit_usd", 0) or 0) + profit, 6)
+        ledger.settled = int(getattr(ledger, "settled", 0) or 0) + 1
+        n += 1
+    return n
+
+
 def apply_dep_arb_experiments(cfg, dep_report: dict, *, auto_apply: bool = True) -> list[str]:
     """Evidence-gated runtime self-improve for dep-arb experiment knobs (paper-only).
 
@@ -294,6 +366,12 @@ def apply_dep_arb_experiments(cfg, dep_report: dict, *, auto_apply: bool = True)
         if getattr(cfg, "dependency_arb_nested_execute", True):
             cfg.dependency_arb_nested_execute = False
             applied.append("nested_execute=0:low_mid_convergence_60s=%.3f" % float(rate60))
+
+    if n60 >= 5 and rate60 is not None and float(rate60) >= 0.50:
+        if not getattr(cfg, "dependency_arb_mid_exit_enabled", False):
+            cfg.dependency_arb_mid_exit_enabled = True
+            applied.append("mid_exit_enabled=1:convergence_60s=%.3f_n=%d" % (
+                float(rate60), n60))
 
     if not getattr(cfg, "dependency_arb_nested_execute", True):
         if not getattr(cfg, "dependency_arb_clock_skew_enabled", False):

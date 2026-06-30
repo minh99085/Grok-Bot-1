@@ -105,10 +105,16 @@ def main() -> int:
                              f"direction_accuracy={gd.get('direction_accuracy')}",
                              "Grok at coin-flip — keep shadow or block weak UP"))
     if stop.get("any_halted"):
-        dir_h = (stop.get("strategies") or {}).get("directional") or {}
-        issues.append(_issue("strategy_halted", "P0",
-                             f"directional halted reasons={dir_h.get('reasons')}",
-                             "inspect stop_conditions or raise PULSE_STOP_MIN_SAMPLES"))
+        strats = stop.get("strategies") or {}
+        for name, st in strats.items():
+            if not (st or {}).get("halted"):
+                continue
+            hint = ("inspect stop_conditions or raise PULSE_STOP_MIN_SAMPLES"
+                    if name == "directional"
+                    else "inspect stop_conditions report for %s" % name)
+            issues.append(_issue("strategy_halted", "P0",
+                                 "%s halted reasons=%s" % (name, st.get("reasons")),
+                                 hint))
     for loop in ("tradingview", "signal_generation", "verifier", "execution"):
         if loop not in loops:
             issues.append(_issue("loop_missing", "P1", f"missing loop {loop}",

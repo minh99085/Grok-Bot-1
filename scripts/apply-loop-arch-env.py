@@ -91,7 +91,7 @@ UPDATES = {
     "PULSE_STOP_MIN_SAMPLES": "60",
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 8-11).
     "PULSE_TICK_SECONDS": "15",
-    "PULSE_MAX_PRICE": "0.55",
+    "PULSE_MAX_PRICE": "0.52",
     # [TV-LOCK] context gate off — TV never blocks entries.
     "PULSE_TV_CONTEXT_GATE": "0",
     # TV confidence tier: modulate min_edge/max_price at 15m sweet spot (not a trade gate).
@@ -165,6 +165,9 @@ UPDATES = {
     "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_OBSERVE": "1",
     "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_HORIZONS_S": "30,60,120",
     "PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY": "1",
+    "PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED": "1",
+    "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S": "60",
+    "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.52",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
     # WS2 (operator-authorized 2026-06-29): un-pause directional for DOWN-side data COLLECTION only.

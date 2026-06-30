@@ -11,7 +11,10 @@ from engine.pulse.dependency_arb_experiments import (
     apply_dep_arb_experiments,
     clock_skew_passes,
     execute_gate,
+    gap_converged,
+    try_mid_exit_positions,
 )
+from engine.pulse.dependency_arb import DependencyArbLedger
 
 
 def _book(ask=0.45, *, ts=0.0):
@@ -164,3 +167,54 @@ def test_apply_dep_arb_experiments_low_mid_convergence():
     applied = apply_dep_arb_experiments(cfg, dep)
     assert cfg.dependency_arb_nested_execute is False
     assert any("low_mid_convergence" in a for a in applied)
+
+
+def test_gap_converged():
+    assert gap_converged(0.10, 0.04) is True
+    assert gap_converged(0.10, 0.08) is False
+
+
+def test_mid_exit_settles_converged_open_position():
+    t0 = 10_000.0
+    parent = _window("p15", open_ts=t0 - 200, book_ts=t0 - 150, ask=0.42)
+    child = _window("c5", open_ts=t0 - 30, book_ts=t0 - 5, ask=0.57)
+    parent.up_book.bids = [(0.44, 10_000.0)]
+    child.up_book = _book(0.44, ts=t0 + 65)
+    parent.up_book = _book(0.42, ts=t0 + 65)
+    parent.up_book.bids = [(0.44, 10_000.0)]
+    ledger = DependencyArbLedger(execute_enabled=True)
+    ledger.positions["p15"] = {
+        "status": "open", "entry_ts": t0, "child_window_key": "c5",
+        "shares": 100.0, "cost_usd": 42.0, "entry_vwap": 0.42,
+        "violation_magnitude": 0.15, "parent_window_key": "p15",
+    }
+    n = try_mid_exit_positions(
+        ledger, {"p15": parent, "c5": child}, now=t0 + 65,
+        horizon_s=60.0, enabled=True,
+    )
+    assert n == 1
+    assert ledger.positions["p15"]["status"] == "settled"
+    assert ledger.positions["p15"]["settlement_source"] == "mid_exit_convergence"
+    assert ledger.positions["p15"]["realized_profit_usd"] > 0
+
+
+def test_apply_enables_mid_exit_on_strong_convergence():
+    cfg = SimpleNamespace(
+        dependency_arb_nested_execute=False,
+        dependency_arb_clock_skew_enabled=True,
+        dependency_arb_min_parent_book_age_s=120.0,
+        dependency_arb_mid_exit_enabled=False,
+    )
+    dep = {
+        "dependency_arb_calibration": {"by_entry_bucket": {}},
+        "experiments": {
+            "mid_convergence": {
+                "by_horizon": {"60": {"n": 8, "converged_rate": 0.875}},
+            },
+        },
+        "rejected_by_reason": {},
+        "executed": 0,
+    }
+    applied = apply_dep_arb_experiments(cfg, dep)
+    assert cfg.dependency_arb_mid_exit_enabled is True
+    assert any("mid_exit_enabled" in a for a in applied)
