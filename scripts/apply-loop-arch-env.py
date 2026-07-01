@@ -151,10 +151,12 @@ UPDATES = {
     # pre-commit-breach check) and drop epsilon to a small fees-only floor. Net effect: capture the
     # near-miss band ONLY when the trade still books guaranteed >0 after realistic sequential fills;
     # reject sub-cost ones. Every booked arb stays guaranteed >= $0 by construction.
-    # Atomic within-window arb DISABLED (operator-authorized 2026-06-30): single-strategy bot —
-    # dependency-arb is the sole trading lane (see PULSE_DIRECTIONAL_ENABLED=0 below). Atomic arb is
-    # risk-free but rare/small and is being set aside to isolate + develop the dep-arb + LLM edge.
-    "PULSE_ARB_ENABLED": "0",
+    # Atomic within-window arb RE-ENABLED (operator-authorized 2026-07-01): it is the only
+    # GUARANTEED positive-EV lane (buy up+down for <$1, collect exactly $1 — risk-free by
+    # construction). Runs alongside the Claude-gated dep-arb so there is a real profitable lane while
+    # dep-arb's verifier matures. Directional stays OFF (PULSE_DIRECTIONAL_ENABLED=0). Net: arb-only
+    # (atomic risk-free arb + dep-arb conjunction/Claude-gated nested), no directional noise.
+    "PULSE_ARB_ENABLED": "1",
     "PULSE_ARB_FEES": "0.0",
     "PULSE_ARB_EPSILON": "0.003",
     "PULSE_ARB_EPSILON_5M": "0.003",

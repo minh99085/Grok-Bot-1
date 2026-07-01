@@ -8,9 +8,10 @@ Read before any env, gate, deploy, or babysit cycle that alters behavior.
 ## Money path (untouchable)
 
 - Paper-only mode (`live_trading_enabled` must stay OFF)
-- **Single-strategy bot (operator-authorized 2026-06-30): dependency-arb is the SOLE trading lane.**
-  Atomic within-window arb (`PULSE_ARB_ENABLED=0`) and directional (`PULSE_DIRECTIONAL_ENABLED=0`)
-  are disabled to isolate + develop the dep-arb + LLM edge.
+- **Arb-only bot (operator-authorized; atomic arb re-enabled 2026-07-01):** trading lanes are
+  atomic within-window arb (`PULSE_ARB_ENABLED=1`, guaranteed risk-free +EV) + dependency-arb
+  (Claude-gated). Directional stays OFF (`PULSE_DIRECTIONAL_ENABLED=0`). Atomic arb is the only
+  guaranteed-profit lane and runs while dep-arb's verifier matures.
 - Dep-arb execute ON; nested-implication runs ONLY behind the authoritative Claude verifier
   (`PULSE_DEP_ARB_VERIFIER_FAIL_OPEN=0` + `PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT=1`); conjunction
   (Fréchet floor) is the risk-free core.
