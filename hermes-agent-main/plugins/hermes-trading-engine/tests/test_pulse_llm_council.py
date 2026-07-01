@@ -2,7 +2,35 @@
 
 from __future__ import annotations
 
-from engine.pulse.llm_council import council_consensus, member_weight, LLMCouncil, best_ev_side
+from engine.pulse.llm_council import (council_consensus, member_weight, LLMCouncil, best_ev_side,
+                                       member_stance)
+
+
+def test_member_stance_follow_fade_ignore_cold():
+    # cold: not enough samples -> trust prior, no invert
+    assert member_stance(5, 5, prior=0.3, min_samples=20)[0] == "cold"
+    # follow: proven predictive (Wilson lower > 0.5)
+    st, w, inv = member_stance(26, 30, prior=0.4, min_samples=20)
+    assert st == "follow" and inv is False and w > 0.1
+    # fade: proven anti-predictive (Wilson upper < 0.5) -> invert
+    st, w, inv = member_stance(4, 30, prior=0.4, min_samples=20)
+    assert st == "fade" and inv is True and w > 0.1
+    # ignore: spans 0.5 -> floor, no invert
+    st, w, inv = member_stance(15, 30, prior=0.4, min_samples=20)
+    assert st == "ignore" and inv is False and w == 0.1
+
+
+def test_council_fades_anti_predictive_member():
+    c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
+    # TV member is contrarian: says UP (p_up 0.8) but outcome is DOWN, repeatedly.
+    for _ in range(30):
+        c.grade({"tv": 0.8}, outcome_up=False)
+    rep = c.report()
+    assert rep["members"]["tv"]["stance"] == "fade" and rep["members"]["tv"]["faded"] is True
+    # Now with only the faded TV member saying UP(0.8), the consensus should lean DOWN (inverted).
+    out = c.decide({"tv": 0.8})
+    assert out["consensus_p_up"] < 0.5
+    assert out["stances"]["tv"]["effective_p_up"] < 0.5
 
 
 def test_best_ev_picks_cheap_underdog_when_underpriced():
@@ -73,18 +101,19 @@ def test_member_weight_cold_warm_and_antipredictive():
     assert w > 0.5
 
 
-def test_council_learns_to_trust_proven_member_and_downweight_bad_one():
+def test_council_follows_proven_member_and_fades_anti_predictive_one():
     c = LLMCouncil(enabled=True, min_samples=20, min_members=2, min_margin=0.02)
-    # grok is anti-predictive (always says up, market goes down); claude is accurate.
+    # grok is anti-predictive (always says up, market goes down); claude is accurate (says down).
     for _ in range(30):
         c.grade({"grok": 0.8, "claude": 0.2, "quant": 0.5}, outcome_up=False)
     rep = c.report()
-    assert rep["members"]["grok"]["weight"] == c.weight_floor      # collapsed to floor
-    assert rep["members"]["claude"]["weight"] > c.weight_floor      # earned weight
-    # Now a window where grok(up) disagrees with claude(down): the proven claude should dominate.
+    assert rep["members"]["grok"]["stance"] == "fade"              # proven anti-predictive -> faded
+    assert rep["members"]["claude"]["stance"] == "follow"           # proven predictive -> followed
+    # grok(up 0.70) is FADED to 0.30 (down), agreeing with claude(down 0.30): confident DOWN consensus.
     out = c.decide({"grok": 0.70, "claude": 0.30, "quant": 0.5})
     assert out["side"] == "down"
     assert out["trade"] is True
+    assert out["stances"]["grok"]["effective_p_up"] < 0.5          # grok's UP view was inverted
 
 
 def test_council_fail_open_when_no_views():

@@ -302,6 +302,7 @@ class PulseConfig:
     llm_council_min_margin: float = 0.02
     llm_council_min_members: int = 2
     council_best_ev: bool = False             # pick side by max(prob-ask), not favorite-by-probability
+    council_tv_member: bool = False           # TV alert direction as a graded council member (follow/fade)
     claude_decider_enabled: bool = False      # Claude directional second-opinion (council member)
     claude_decider_model: str = ""
     claude_decider_timeout_s: float = 18.0
@@ -791,6 +792,8 @@ class PulseConfig:
             llm_council_min_margin=_envf("PULSE_LLM_COUNCIL_MIN_MARGIN", 0.02),
             llm_council_min_members=int(_envf("PULSE_LLM_COUNCIL_MIN_MEMBERS", 2)),
             council_best_ev=str(os.getenv("PULSE_COUNCIL_BEST_EV", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            council_tv_member=str(os.getenv("PULSE_COUNCIL_TV_MEMBER", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
             claude_decider_enabled=str(os.getenv("PULSE_CLAUDE_DECIDER_ENABLED", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -2246,6 +2249,14 @@ class PulseEngine:
                             if (grok_dec is not None and grok_dec.get("p_up") is not None) else None)
                 _council_views = {"quant": (float(fair_used) if fair_used is not None else None),
                                   "grok": _grok_pu, "claude": claude_pu}
+                # TV alert as a graded member: direction+strength -> p_up. The council FOLLOWS/FADES/
+                # IGNORES it from live accuracy (TV is historically negative-alpha -> likely faded).
+                if self.cfg.council_tv_member and tv_feature:
+                    _tvd = str(tv_feature.get("direction") or "").upper()
+                    _tvs = tv_feature.get("strength")
+                    if _tvs is not None and _tvd in ("UP", "DOWN"):
+                        _tvs = max(0.0, min(1.0, float(_tvs)))
+                        _council_views["tv"] = (0.5 + 0.5 * _tvs) if _tvd == "UP" else (0.5 - 0.5 * _tvs)
                 council_dec = self.llm_council.decide(_council_views)
                 dr.council = council_dec
                 self._schedule_council_grade(mc.decision_id, snap.price, w.close_ts, _council_views)

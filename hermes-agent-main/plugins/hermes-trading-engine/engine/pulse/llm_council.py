@@ -40,6 +40,40 @@ def _wilson_lower(correct: int, n: int, z: float = 1.64) -> Optional[float]:
     return max(0.0, center - margin)
 
 
+def _wilson_upper(correct: int, n: int, z: float = 1.64) -> Optional[float]:
+    """One-sided upper Wilson bound of accuracy -- flags a member as PROVEN anti-predictive when the
+    upper bound is still below 0.5 (worse than a coin flip => worth FADING, not just ignoring)."""
+    if n <= 0:
+        return None
+    phat = correct / n
+    denom = 1.0 + z * z / n
+    center = (phat + z * z / (2 * n)) / denom
+    margin = (z * math.sqrt((phat * (1.0 - phat) + z * z / (4 * n)) / n)) / denom
+    return min(1.0, center + margin)
+
+
+def member_stance(correct: int, n: int, *, prior: float, floor: float = 0.1,
+                  min_samples: int = 20, scale: float = 8.0):
+    """FOLLOW / FADE / IGNORE / COLD decision for one member from its graded accuracy.
+
+    * COLD   (n < min_samples): trust the prior, use the view as-is.
+    * FOLLOW (Wilson lower > 0.5): proven predictive -> weight up, use the view as-is.
+    * FADE   (Wilson upper < 0.5): proven anti-predictive -> weight by how-wrong, and INVERT the view
+      (this is how the council exploits a contrarian signal like TV's strong alerts).
+    * IGNORE (spans 0.5): uncertain -> collapse to the floor, use the view as-is.
+
+    Returns ``(stance, weight, invert)``."""
+    if n < int(min_samples):
+        return "cold", max(float(floor), float(prior)), False
+    lo = _wilson_lower(correct, n)
+    up = _wilson_upper(correct, n)
+    if lo is not None and lo > 0.5:
+        return "follow", round(float(floor) + (lo - 0.5) * float(scale), 6), False
+    if up is not None and up < 0.5:
+        return "fade", round(float(floor) + (0.5 - up) * float(scale), 6), True
+    return "ignore", float(floor), False
+
+
 def member_weight(correct: int, n: int, *, prior: float, floor: float = 0.1,
                   min_samples: int = 20, scale: float = 8.0) -> float:
     """Weight for one member from its graded accuracy. Cold (n < min_samples) -> ``prior``. Warm ->
@@ -109,8 +143,9 @@ class LLMCouncil:
     ``to_state``/``load_state``. PAPER ONLY."""
 
     #: default cold-start priors -- Claude has been the reliable reviewer, quant is the anchor, Grok
-    #: starts modest (historically anti-predictive as a solo direction caller).
-    DEFAULT_PRIORS = {"quant": 1.0, "claude": 0.7, "grok": 0.4}
+    #: starts modest, TV starts low (historically negative-alpha; the council will FADE it if the
+    #: grading confirms it's anti-predictive, or FOLLOW it if it turns out predictive).
+    DEFAULT_PRIORS = {"quant": 1.0, "claude": 0.7, "grok": 0.4, "tv": 0.3}
 
     def __init__(self, *, enabled: bool = False, min_agreement: float = 0.60,
                  min_margin: float = 0.02, min_members: int = 2, min_samples: int = 20,
@@ -136,15 +171,30 @@ class LLMCouncil:
                              floor=self.weight_floor, min_samples=self.min_samples,
                              scale=self.weight_scale)
 
+    def _stance_locked(self, name: str):
+        s = self._stats.get(name) or {"n": 0, "correct": 0}
+        return member_stance(s["correct"], s["n"], prior=self.priors.get(name, 0.5),
+                             floor=self.weight_floor, min_samples=self.min_samples,
+                             scale=self.weight_scale)
+
     def decide(self, views: dict) -> dict:
-        """``views``: ``{member_name: p_up_or_None}``. Returns the consensus dict (see
-        ``council_consensus``) plus the weight snapshot used."""
+        """``views``: ``{member_name: p_up_or_None}``. Each member's view is FOLLOWED, FADED (inverted),
+        or IGNORED based on its live graded accuracy, then blended into the consensus."""
         with self._lock:
             self.evaluations += 1
-            votes = [{"name": n, "p_up": p, "weight": self._weight_locked(n)}
-                     for n, p in (views or {}).items() if p is not None]
+            votes = []
+            stances = {}
+            for n, p in (views or {}).items():
+                if p is None:
+                    continue
+                stance, weight, invert = self._stance_locked(n)
+                eff = (1.0 - float(p)) if invert else float(p)
+                votes.append({"name": n, "p_up": eff, "weight": weight})
+                stances[n] = {"stance": stance, "weight": round(weight, 4),
+                              "raw_p_up": round(float(p), 4), "effective_p_up": round(eff, 4)}
             out = council_consensus(votes, min_agreement=self.min_agreement,
                                     min_margin=self.min_margin, min_members=self.min_members)
+            out["stances"] = stances
             if out.get("trade"):
                 self.decisions += 1
             return out
@@ -168,10 +218,11 @@ class LLMCouncil:
             for name in set(list(self.priors) + list(self._stats)):
                 s = self._stats.get(name) or {"n": 0, "correct": 0}
                 acc = round(s["correct"] / s["n"], 4) if s["n"] else None
+                stance, weight, invert = self._stance_locked(name)
                 members[name] = {"n": s["n"], "accuracy": acc,
                                  "accuracy_lower_ci": (round(_wilson_lower(s["correct"], s["n"]), 4)
                                                        if s["n"] else None),
-                                 "weight": round(self._weight_locked(name), 4),
+                                 "stance": stance, "faded": invert, "weight": round(weight, 4),
                                  "prior": self.priors.get(name)}
             return {
                 "enabled": self.enabled, "paper_only": True,
