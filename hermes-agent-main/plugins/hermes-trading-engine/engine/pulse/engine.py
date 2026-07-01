@@ -296,6 +296,14 @@ class PulseConfig:
     # Cheap parent-UP entries are adverse-selection: the market correctly priced the
     # parent as likely-DOWN, but the nested heuristic bet UP anyway (see ledger buckets).
     dependency_arb_min_entry_vwap: float = 0.0
+    # ---- LLM COUNCIL: ensemble of quant + Grok + Claude directional views (PAPER ONLY) ----
+    llm_council_enabled: bool = False
+    llm_council_min_agreement: float = 0.60
+    llm_council_min_margin: float = 0.02
+    llm_council_min_members: int = 2
+    claude_decider_enabled: bool = False      # Claude directional second-opinion (council member)
+    claude_decider_model: str = ""
+    claude_decider_timeout_s: float = 18.0
     bregman_projection_enabled: bool = False  # WS4 Layer 2 diagnostics
     bregman_trade_authority: bool = False     # Bregman sizes Lane B when True
     bregman_alpha: float = 0.9
@@ -770,6 +778,15 @@ class PulseConfig:
                 "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP", 0.52),
             dependency_arb_min_entry_vwap=_envf(
                 "PULSE_DEPENDENCY_ARB_MIN_ENTRY_VWAP", 0.0),
+            llm_council_enabled=str(os.getenv("PULSE_LLM_COUNCIL_ENABLED", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            llm_council_min_agreement=_envf("PULSE_LLM_COUNCIL_MIN_AGREEMENT", 0.60),
+            llm_council_min_margin=_envf("PULSE_LLM_COUNCIL_MIN_MARGIN", 0.02),
+            llm_council_min_members=int(_envf("PULSE_LLM_COUNCIL_MIN_MEMBERS", 2)),
+            claude_decider_enabled=str(os.getenv("PULSE_CLAUDE_DECIDER_ENABLED", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            claude_decider_model=str(os.getenv("PULSE_CLAUDE_DECIDER_MODEL", "") or ""),
+            claude_decider_timeout_s=_envf("PULSE_CLAUDE_DECIDER_TIMEOUT_S", 18.0),
             bregman_projection_enabled=str(os.getenv("PULSE_BREGMAN_PROJECTION_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             bregman_trade_authority=str(os.getenv("PULSE_BREGMAN_TRADE_AUTHORITY", "0"))
@@ -1428,6 +1445,7 @@ class PulseEngine:
         self.claude_budget = None
         self.verifier = None
         self.dep_arb_verifier = None
+        self.claude_decider = None             # Claude directional second-opinion (LLM council member)
         self.research_loop = None
         self._research_avoid: set = set()      # canonical "dim=bucket" contexts auto-blocked by Claude
         self._research_exploit: set = set()    # "dim=bucket" contexts Claude flags AND data proves WINNING
@@ -1474,9 +1492,27 @@ class PulseEngine:
                         report_provider=self._research_report, lessons=self.lessons,
                         apply_fn=self._research_apply,
                         auto_apply=self.cfg.research_auto_apply).start()
+                if self.cfg.claude_decider_enabled:
+                    from engine.pulse.claude_decider import (ClaudeDecider,
+                                                             make_claude_decider_fn)
+                    self.claude_decider = ClaudeDecider(
+                        decider_fn=make_claude_decider_fn(
+                            model=(self.cfg.claude_decider_model or None),
+                            timeout_s=self.cfg.claude_decider_timeout_s),
+                        budget=self.claude_budget,
+                        ttl_s=self.cfg.grok_decider_ttl_s).start()
         except Exception:  # noqa: BLE001 — verifier/research never block startup
             logger.exception("claude verifier/research init failed; continuing")
             self.claude_budget = self.verifier = self.dep_arb_verifier = self.research_loop = None
+            self.claude_decider = None
+        # ---- LLM COUNCIL: evidence-weighted ensemble of quant + Grok + Claude views (PAPER) ----
+        from engine.pulse.llm_council import LLMCouncil
+        self.llm_council = LLMCouncil(
+            enabled=bool(self.cfg.llm_council_enabled),
+            min_agreement=self.cfg.llm_council_min_agreement,
+            min_margin=self.cfg.llm_council_min_margin,
+            min_members=self.cfg.llm_council_min_members)
+        self._council_pending: list = []
         # OBSERVE-ONLY TradingView indicator webhook intake (enabled only when a secret is set).
         # Alerts become candidate signals only; they can never place/resize/bypass a paper trade.
         self.tradingview = None
@@ -1726,6 +1762,9 @@ class PulseEngine:
             self.grok_decider.load_state(acct.get("grok_decider") or {})
         if self.grok_news is not None:
             self.grok_news.load_state(acct.get("grok_news") or {})
+        if self.llm_council is not None:
+            self.llm_council.load_state(acct.get("llm_council") or {})
+        self._council_pending = list(acct.get("council_pending") or [])
         if self.grok_dep_convergence is not None:
             self.grok_dep_convergence.load_state(acct.get("grok_dep_convergence") or {})
             self._obs_completed_n = int(acct.get("grok_dep_obs_completed_n") or 0)
@@ -1845,6 +1884,7 @@ class PulseEngine:
                     if gp is not None:
                         tv_feature = {**feat, "grok_p_up": gp.get("p_up")}
         self._grade_grok_decisions(now)   # grade prior Grok decisions vs realized window close
+        self._grade_council_decisions(now)  # grade prior LLM-council member views vs realized close
         self._grade_verifier_decisions(now)  # counterfactual grade for vetoed (and shadow) setups
         self._grade_dep_arb_verifier_decisions(now)  # dep-arb verifier veto counterfactuals
         self._grade_cex_lead(now)         # grade prior CEX-lead signals vs realized window close
@@ -2150,6 +2190,39 @@ class PulseEngine:
                             "view_accuracy": self.grok_decider.report().get("view_accuracy")})
                 self._maybe_schedule_verifier_counterfactual(
                     mc, w, snap, grok_dec, acted=False)
+            # ---- LLM COUNCIL: blend quant + Grok + Claude directional views into one consensus ----
+            # Both LLMs' compute drives the trade: Grok + a Claude second-opinion vote alongside the
+            # quant baseline, weighted by each member's live graded accuracy. The consensus is routed
+            # through the SAME follow path (execution floor + Claude verifier still authoritative).
+            # FAIL-OPEN: no consensus -> fall through to the quant baseline (never blocks like a gate).
+            council_follow = False
+            if (self.llm_council is not None and self.llm_council.enabled
+                    and self.grok_decider is not None):
+                claude_pu = None
+                if self.claude_decider is not None:
+                    self.claude_decider.request(mc.decision_id, _grok_bundle, refresh_token=_refresh)
+                    _cv = self.claude_decider.get(mc.decision_id)
+                    claude_pu = _cv.get("p_up") if _cv else None
+                _grok_pu = (float(grok_dec.get("p_up"))
+                            if (grok_dec is not None and grok_dec.get("p_up") is not None) else None)
+                _council_views = {"quant": (float(fair_used) if fair_used is not None else None),
+                                  "grok": _grok_pu, "claude": claude_pu}
+                council_dec = self.llm_council.decide(_council_views)
+                dr.council = council_dec
+                self._schedule_council_grade(mc.decision_id, snap.price, w.close_ts, _council_views)
+                if council_dec.get("trade"):
+                    _cp = float(council_dec["consensus_p_up"])
+                    # Synthesize an actionable decision so the existing follow path executes the
+                    # council consensus through the same deterministic floor + Claude verifier (paper).
+                    grok_dec = {
+                        "action": council_dec["side"], "p_up": round(_cp, 4),
+                        "confidence": max(self.cfg.grok_decider_min_confidence,
+                                          float(council_dec.get("confidence") or 0.0)),
+                        "size_fraction": max(0.1, float(council_dec.get("confidence") or 0.0)),
+                        "ts": now, "ttl_s": self.cfg.grok_decider_ttl_s,
+                        "context": (grok_dec or {}).get("context") or {}, "council": True}
+                    dr.grok_decision = grok_dec
+                    council_follow = True
             # FOLLOW only when: mode=follow, breaker not tripped, and this window is in the A/B canary
             # follow-fraction. Otherwise fall through to the baseline path (the A/B control arm).
             grok_follow = False
@@ -2157,6 +2230,8 @@ class PulseEngine:
             if self.cfg.grok_decider_mode == "follow" and self.grok_decider is not None:
                 ok, _br = self.grok_decider.should_follow(now)
                 grok_follow = ok and self._follow_canary(mc.decision_id)
+            if council_follow:                       # council consensus drives this window
+                grok_follow = True
             # the directional decision uses the (possibly learning-adjusted) probability; the
             # STRICT execution gate below is UNCHANGED and remains the sole trade authority.
             if grok_follow:
@@ -3721,6 +3796,35 @@ class PulseEngine:
             elif now <= p["close_ts"] + 600:
                 still.append(p)
         self._grok_pending = still[-2000:]
+
+    def _schedule_council_grade(self, decision_id: str, price0, close_ts: float,
+                                views: dict) -> None:
+        """Snapshot the LLM-council member views for grading at window close (restart-safe)."""
+        if price0 is None or self.llm_council is None:
+            return
+        for p in self._council_pending:
+            if p["decision_id"] == decision_id:
+                return
+        self._council_pending.append({"decision_id": decision_id, "price0": float(price0),
+                                      "close_ts": float(close_ts), "views": dict(views or {})})
+
+    def _grade_council_decisions(self, now: float) -> None:
+        """Grade each council member's p_up view vs the realized close (UP if close >= open). This is
+        how the council learns which member to trust and re-weights them. Leakage-free + restart-safe."""
+        if not self._council_pending or self.llm_council is None:
+            return
+        px = self.price.current()
+        still = []
+        for p in self._council_pending:
+            if now < p["close_ts"]:
+                still.append(p)
+                continue
+            if px is not None:
+                outcome_up = float(px) >= float(p["price0"])
+                self.llm_council.grade(p.get("views") or {}, outcome_up)
+            elif now <= p["close_ts"] + 600:
+                still.append(p)
+        self._council_pending = still[-2000:]
 
     def _schedule_cex_lead_grade(self, decision_id: str, price0, close_ts: float,
                                  sig: dict) -> None:
@@ -5404,6 +5508,10 @@ class PulseEngine:
                              else {"enabled": False}),
             "grok_signal_intel": self._grok_intel_report(),
             "grok_decider": self._grok_decider_report(),
+            "llm_council": (self.llm_council.report() if self.llm_council is not None
+                            else {"enabled": False}),
+            "claude_decider": (self.claude_decider.report() if self.claude_decider is not None
+                               else {"enabled": False}),
             "verifier": (self.verifier.report() if self.verifier is not None else {"enabled": False}),
             "research_loop": (self.research_loop.report() if self.research_loop is not None
                               else {"enabled": False}),
@@ -5508,6 +5616,9 @@ class PulseEngine:
                                                if self.grok_analyst is not None else {}),
                               "grok_decider": (self.grok_decider.to_state()
                                                if self.grok_decider is not None else {}),
+                              "llm_council": (self.llm_council.to_state()
+                                              if self.llm_council is not None else {}),
+                              "council_pending": self._council_pending[-2000:],
                               "grok_news": (self.grok_news.to_state()
                                             if self.grok_news is not None else {}),
                               "grok_dep_convergence": (

@@ -22,13 +22,19 @@ if not ENV_PATH.exists():
 UPDATES = {
     "PULSE_DASHBOARD_BOT_LABEL": "Bot 1 · arb-first perfect-WR",
     "TRADINGVIEW_WEBHOOK_MIRROR_URL": "",
-    # LOCKS LIFTED (operator 2026-07-01 "remove all locks; make the loop learn+adjust"):
-    # Grok decider promoted shadow -> follow so it acts on real windows and is graded live by the
-    # verifier + loop. NOTE: Grok has been anti-predictive + API-erroring; the fail-closed verifier
-    # below still gates every follow, and the loop will fade it from real outcomes.
-    "PULSE_GROK_DECIDER_MODE": "follow",
+    # LLM COUNCIL wiring (operator 2026-07-01 "utilize computing power of Grok and Claude"):
+    # Grok is back to SHADOW so it is NOT a solo fail-closed gate (which was blocking trades); instead
+    # it feeds the council as a graded MEMBER (its p_up view). The council blends quant + Grok + Claude
+    # by live accuracy and drives the trade; the Claude verifier remains the independent checker.
+    "PULSE_GROK_DECIDER_MODE": "shadow",
     "PULSE_GROK_DECIDER_FOLLOW_FRACTION": "0.5",
     "PULSE_GROK_DECIDER_EXPLORE_RATE": "0.05",
+    # Both LLMs' compute drives the decision: Grok member + Claude second-opinion member + quant.
+    "PULSE_LLM_COUNCIL_ENABLED": "1",
+    "PULSE_LLM_COUNCIL_MIN_AGREEMENT": "0.60",
+    "PULSE_LLM_COUNCIL_MIN_MARGIN": "0.02",
+    "PULSE_LLM_COUNCIL_MIN_MEMBERS": "2",
+    "PULSE_CLAUDE_DECIDER_ENABLED": "1",
     "PULSE_GROK_DECIDER_MIN_CONFIDENCE": "0.62",
     "PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN": "0.08",
     # Trinity profile: fast 15s tick (arb) + tiered Grok (profit/API/soak balance).
@@ -50,8 +56,11 @@ UPDATES = {
     "PULSE_GROK_TIER_FULL_DIVERGENCE_MIN": "0.025",
     "PULSE_GROK_TIER_DEEP_DIVERGENCE_MIN": "0.04",
     "PULSE_VERIFIER_ENABLED": "1",
-    "PULSE_VERIFIER_FAIL_OPEN": "0",
-    "PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT": "1",
+    # Council pairs Claude as a voting MEMBER with Claude the verifier (checker). To avoid Claude
+    # double-gating (member + fail-closed checker) starving council trades, the verifier now only
+    # blocks on an ACTIVE veto, not on a pending/latency verdict (fail-open on pending).
+    "PULSE_VERIFIER_FAIL_OPEN": "1",
+    "PULSE_VERIFIER_FOLLOW_REQUIRE_VERDICT": "0",
     # [TV-LOCK] observe-only — webhooks feed features/Grok; no MTF or signal trade authority.
     "PULSE_TRADINGVIEW_SIGNAL_GATE": "0",
     "PULSE_TV_EVENT_ID_SUFFIX": "bot1",

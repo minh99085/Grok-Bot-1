@@ -233,6 +233,7 @@ class DecisionResult:
     tv_confidence_tier: Optional[dict] = None   # TV regime param modulation (observe-only)
     late_window: Optional[dict] = None          # late-window high-conviction entry mode decision
     grok_decision: Optional[dict] = None        # Grok decision-engine output (shadow/follow)
+    council: Optional[dict] = None              # LLM council consensus (quant+Grok+Claude ensemble)
     cex_lead: Optional[dict] = None             # CEX-lead latency edge signal (shadow/gated)
     arbitrage: Optional[dict] = None            # within-window risk-free dutch-book opportunity
     calibration: Optional[dict] = None          # raw vs calibrated fair P(up)

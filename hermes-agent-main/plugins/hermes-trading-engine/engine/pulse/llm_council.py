@@ -1,0 +1,184 @@
+"""LLM council for the BTC pulse directional decision (PAPER ONLY).
+
+Replaces the old strict gate chain (Grok proposes -> Claude only vetoes) with an evidence-weighted
+ENSEMBLE that actually uses both LLMs' compute. Each member contributes an independent directional
+view -- ``p_up`` in [0, 1] = P(BTC closes >= open) -- and the council blends them into ONE consensus
+weighted by each member's OWN live, graded accuracy (Wilson lower bound over settled windows):
+
+* quant baseline (digital fair value + learned-edge blend),
+* Grok decider (its per-window p_up view),
+* Claude second-opinion (a directional lean, not just a veto).
+
+Anti-predictive members are automatically driven to a weight floor (so a member that has proven it
+is worse than a coin flip stops moving the consensus); members with proven out-of-sample edge
+dominate. The council LEARNS who to trust from real outcomes.
+
+Two invariants (paper-only bot):
+* The council only PROPOSES a side + confidence. The deterministic execution floor (calibration,
+  selectivity, execution-quality EV gate, risk caps, freshness) still decides whether a paper fill
+  happens -- the council can never bypass it.
+* FAIL-OPEN. If not enough member views are available it returns ``trade=False`` with no side and the
+  engine falls back to the quant baseline. It never blocks trading the way a fail-closed gate does.
+"""
+
+from __future__ import annotations
+
+import math
+import threading
+from typing import Optional
+
+
+def _wilson_lower(correct: int, n: int, z: float = 1.64) -> Optional[float]:
+    """One-sided lower Wilson bound of accuracy -- statistically confident floor on a member's
+    directional hit-rate (not just a small-sample fluke)."""
+    if n <= 0:
+        return None
+    phat = correct / n
+    denom = 1.0 + z * z / n
+    center = (phat + z * z / (2 * n)) / denom
+    margin = (z * math.sqrt((phat * (1.0 - phat) + z * z / (4 * n)) / n)) / denom
+    return max(0.0, center - margin)
+
+
+def member_weight(correct: int, n: int, *, prior: float, floor: float = 0.1,
+                  min_samples: int = 20, scale: float = 8.0) -> float:
+    """Weight for one member from its graded accuracy. Cold (n < min_samples) -> ``prior``. Warm ->
+    ``floor + max(0, wilson_lower - 0.5) * scale`` so only PROVEN out-of-sample edge earns weight and
+    anti-predictive members collapse to the floor."""
+    if n < int(min_samples):
+        return max(float(floor), float(prior))
+    lo = _wilson_lower(correct, n)
+    edge = max(0.0, (lo - 0.5)) if lo is not None else 0.0
+    return round(float(floor) + edge * float(scale), 6)
+
+
+def council_consensus(votes: list, *, min_agreement: float = 0.60,
+                      min_margin: float = 0.02, min_members: int = 2) -> dict:
+    """Blend member votes into one consensus decision.
+
+    ``votes``: list of ``{"name", "p_up" (0-1), "weight" (>0)}`` -- only members with a usable p_up.
+    Trades only when the weighted consensus has enough directional margin AND enough of the weight
+    agrees with the consensus side. Pure + deterministic (fully unit-testable)."""
+    usable = [v for v in votes
+              if v.get("p_up") is not None and float(v.get("weight") or 0.0) > 0.0]
+    if len(usable) < int(min_members):
+        return {"trade": False, "side": None, "consensus_p_up": None, "reason": "insufficient_members",
+                "n_members": len(usable), "agreement": None, "margin": None, "confidence": 0.0,
+                "members": [v.get("name") for v in usable]}
+    tw = sum(float(v["weight"]) for v in usable)
+    cp = sum(float(v["weight"]) * float(v["p_up"]) for v in usable) / tw
+    side = "up" if cp >= 0.5 else "down"
+    agree_w = sum(float(v["weight"]) for v in usable
+                  if (float(v["p_up"]) >= 0.5) == (cp >= 0.5)) / tw
+    margin = abs(cp - 0.5)
+    trade = (margin >= float(min_margin)) and (agree_w >= float(min_agreement))
+    confidence = round(min(1.0, margin * 2.0) * agree_w, 4)
+    return {
+        "trade": bool(trade), "side": side, "consensus_p_up": round(cp, 4),
+        "agreement": round(agree_w, 4), "margin": round(margin, 4), "confidence": confidence,
+        "n_members": len(usable),
+        "members": {v["name"]: {"p_up": round(float(v["p_up"]), 4),
+                                "weight": round(float(v["weight"]), 4)} for v in usable},
+        "reason": ("consensus_%s" % side) if trade else (
+            "low_margin" if margin < float(min_margin) else "low_agreement"),
+    }
+
+
+class LLMCouncil:
+    """Stateful council: holds each member's graded accuracy, derives live weights, produces the
+    per-window consensus, and grades members vs realized outcomes. Thread-safe; restart-safe via
+    ``to_state``/``load_state``. PAPER ONLY."""
+
+    #: default cold-start priors -- Claude has been the reliable reviewer, quant is the anchor, Grok
+    #: starts modest (historically anti-predictive as a solo direction caller).
+    DEFAULT_PRIORS = {"quant": 1.0, "claude": 0.7, "grok": 0.4}
+
+    def __init__(self, *, enabled: bool = False, min_agreement: float = 0.60,
+                 min_margin: float = 0.02, min_members: int = 2, min_samples: int = 20,
+                 weight_floor: float = 0.1, weight_scale: float = 8.0,
+                 priors: Optional[dict] = None):
+        self.enabled = bool(enabled)
+        self.min_agreement = float(min_agreement)
+        self.min_margin = float(min_margin)
+        self.min_members = int(min_members)
+        self.min_samples = int(min_samples)
+        self.weight_floor = float(weight_floor)
+        self.weight_scale = float(weight_scale)
+        self.priors = dict(priors or self.DEFAULT_PRIORS)
+        self._lock = threading.Lock()
+        self._stats: dict = {}          # name -> {"n","correct"}
+        self.decisions = 0              # consensus dicts produced with trade=True
+        self.evaluations = 0           # decide() calls
+        self.graded = 0
+
+    def _weight_locked(self, name: str) -> float:
+        s = self._stats.get(name) or {"n": 0, "correct": 0}
+        return member_weight(s["correct"], s["n"], prior=self.priors.get(name, 0.5),
+                             floor=self.weight_floor, min_samples=self.min_samples,
+                             scale=self.weight_scale)
+
+    def decide(self, views: dict) -> dict:
+        """``views``: ``{member_name: p_up_or_None}``. Returns the consensus dict (see
+        ``council_consensus``) plus the weight snapshot used."""
+        with self._lock:
+            self.evaluations += 1
+            votes = [{"name": n, "p_up": p, "weight": self._weight_locked(n)}
+                     for n, p in (views or {}).items() if p is not None]
+            out = council_consensus(votes, min_agreement=self.min_agreement,
+                                    min_margin=self.min_margin, min_members=self.min_members)
+            if out.get("trade"):
+                self.decisions += 1
+            return out
+
+    def grade(self, views: dict, outcome_up: bool) -> None:
+        """Grade each member's directional view (p_up vs realized close). ``views`` is the snapshot
+        captured at decision time. Restart-safe (engine persists the snapshot in its pending list)."""
+        with self._lock:
+            up = bool(outcome_up)
+            for name, p in (views or {}).items():
+                if p is None:
+                    continue
+                s = self._stats.setdefault(name, {"n": 0, "correct": 0})
+                s["n"] += 1
+                s["correct"] += int((float(p) >= 0.5) == up)
+            self.graded += 1
+
+    def report(self) -> dict:
+        with self._lock:
+            members = {}
+            for name in set(list(self.priors) + list(self._stats)):
+                s = self._stats.get(name) or {"n": 0, "correct": 0}
+                acc = round(s["correct"] / s["n"], 4) if s["n"] else None
+                members[name] = {"n": s["n"], "accuracy": acc,
+                                 "accuracy_lower_ci": (round(_wilson_lower(s["correct"], s["n"]), 4)
+                                                       if s["n"] else None),
+                                 "weight": round(self._weight_locked(name), 4),
+                                 "prior": self.priors.get(name)}
+            return {
+                "enabled": self.enabled, "paper_only": True,
+                "affects_trading": self.enabled,
+                "min_agreement": self.min_agreement, "min_margin": self.min_margin,
+                "min_members": self.min_members, "min_samples": self.min_samples,
+                "evaluations": self.evaluations, "trade_decisions": self.decisions,
+                "graded": self.graded, "members": members,
+                "note": ("evidence-weighted ensemble of quant + Grok + Claude directional views; "
+                         "members weighted by live Wilson-lower accuracy (anti-predictive -> floor); "
+                         "proposes side only, execution floor still authoritative; fail-open to "
+                         "baseline. PAPER ONLY."),
+            }
+
+    def to_state(self) -> dict:
+        with self._lock:
+            return {"stats": {n: dict(s) for n, s in self._stats.items()},
+                    "decisions": self.decisions, "evaluations": self.evaluations,
+                    "graded": self.graded}
+
+    def load_state(self, data: dict) -> None:
+        if not data:
+            return
+        with self._lock:
+            self._stats = {n: {"n": int(s.get("n", 0) or 0), "correct": int(s.get("correct", 0) or 0)}
+                           for n, s in (data.get("stats") or {}).items()}
+            self.decisions = int(data.get("decisions", 0) or 0)
+            self.evaluations = int(data.get("evaluations", 0) or 0)
+            self.graded = int(data.get("graded", 0) or 0)
