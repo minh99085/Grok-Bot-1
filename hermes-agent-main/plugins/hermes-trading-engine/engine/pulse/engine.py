@@ -2448,9 +2448,14 @@ class PulseEngine:
                         grok_verdict = self.verifier.get(mc.decision_id) or {
                             "approve": False, "pending": True, "reason": "verifier_pending"}
                     else:
+                        # LLM-council trades already include Claude's view as a MEMBER, so the Claude
+                        # VERIFIER should not ALSO hard-veto them (double-gating strangled trading).
+                        # Treat council + explore trades as exploration -> a veto becomes a
+                        # shrunk-approve (trade small under skepticism) and is still graded.
+                        _council_trade = bool((grok_dec or {}).get("council"))
                         grok_verdict = self.verifier.verdict_or_failopen(
                             mc.decision_id,
-                            exploration=(entry_mode == "grok_explore"))
+                            exploration=(entry_mode == "grok_explore" or _council_trade))
                     if not grok_verdict.get("approve"):
                         vr = "verifier_pending" if grok_verdict.get("pending") else "verifier_veto"
                         if not grok_verdict.get("pending"):
