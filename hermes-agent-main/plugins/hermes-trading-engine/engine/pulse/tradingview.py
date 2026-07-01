@@ -39,8 +39,10 @@ NOT_OBJECT = "payload_not_object"
 REJECT_REASONS = (INVALID_JSON, MISSING_SECRET, BAD_SECRET, WRONG_BOT, UNSUPPORTED_SYMBOL,
                   STALE_TIMESTAMP, MALFORMED_DIRECTION, DUPLICATE_EVENT_ID, WRONG_EVENT_SUFFIX,
                   NOT_OBJECT)
-# Retired chart timeframes (pre-2m/3m/4m MTF); stripped from persisted snapshots on load.
-LEGACY_MTF_TFS = frozenset({"5", "10", "15"})
+# Chart timeframes to strip from persisted snapshots on load. Empty now: 5m/10m/15m are ACTIVE
+# horizon-matched TFs (operator added those charts; each is a graded per-TF council member), so they
+# must NOT be pruned. (Was {"5","10","15"} from the pre-2m/3m/4m era, which silently dropped them.)
+LEGACY_MTF_TFS = frozenset()
 
 _DIRECTION_MAP = {
     "up": "UP", "long": "UP", "buy": "UP", "bull": "UP", "bullish": "UP", "1": "UP",
