@@ -124,7 +124,12 @@ UPDATES = {
     "PULSE_MIN_EDGE": "0.004",
     "PULSE_BASIS_BUFFER": "0.004",
     # Strategy: sweet-spot only (0.47-0.55) entry band.
-    "PULSE_MIN_ENTRY_PRICE": "0.45",
+    # Loosened 0.45->0.35 (2026-07-01 "loosen restriction"): the underdog-price floor was rejecting
+    # best-EV's cheap-underdog picks (underdog_price_below_floor was the top exec-gate reject). It's an
+    # adverse-selection guard (cheap-side buys historically won ~28%), so loosen MODERATELY, not to 0 -
+    # -the EV-after-slippage gate stays the backstop and underdog trades are graded (re-tighten if they
+    # lose). Lets best-EV take +EV underdogs down to 0.35.
+    "PULSE_MIN_ENTRY_PRICE": "0.35",
     "PULSE_MIN_REWARD_RISK": "0.50",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
     "PULSE_GROK_UP_MIN_P_WIN": "0.52",

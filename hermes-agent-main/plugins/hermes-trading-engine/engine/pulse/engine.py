@@ -2287,7 +2287,9 @@ class PulseEngine:
                         "action": _side_c, "p_up": round(_cp, 4),
                         "confidence": max(self.cfg.grok_decider_min_confidence,
                                           float(council_dec.get("confidence") or 0.0)),
-                        "size_fraction": max(0.1, float(council_dec.get("confidence") or 0.0)),
+                        # floor at 0.3 so a council order clears the ~$1 min-order size (base $5 x 0.3
+                        # = $1.5); low-confidence trades were sizing to ~$0.50 -> min_size_or_tick reject.
+                        "size_fraction": max(0.3, float(council_dec.get("confidence") or 0.0)),
                         "ts": now, "ttl_s": self.cfg.grok_decider_ttl_s,
                         "context": (grok_dec or {}).get("context") or {}, "council": True}
                     dr.grok_decision = grok_dec
