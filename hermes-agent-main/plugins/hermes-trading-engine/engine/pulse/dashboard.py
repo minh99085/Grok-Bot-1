@@ -47,9 +47,7 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
   padding:10px 16px;border-radius:var(--radius);background:var(--card);border:1px solid var(--line);
   margin-bottom:12px;
 }
-.content-split{
-  display:grid;grid-template-columns:1fr 440px;gap:12px 24px;align-items:start;
-}
+.trades-col{margin-bottom:12px}
 .trades-toggle{
   width:100%;text-align:left;cursor:pointer;
   display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -105,7 +103,6 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
   text-transform:uppercase;letter-spacing:.06em;padding:8px 2px 4px;
 }
 .foot{margin-top:14px;color:var(--text2);font-size:20px}
-@media(max-width:960px){.content-split{grid-template-columns:1fr}}
 @media(max-width:420px){.tl-grid{grid-template-columns:1fr}.cap-main{font-size:34px}}
 </style>
 </head>
@@ -120,19 +117,17 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
   <div class="cap-bar" id="cap-bar"></div>
   <div class="stats-bar" id="stats-bar"></div>
   <div class="verdict" id="verdict"></div>
-  <div class="content-split">
-    <div class="tl-grid" id="tl-grid"></div>
-    <aside class="trades-col">
-      <button type="button" class="trades-toggle" id="trades-toggle" aria-expanded="false">
-        <span><span id="trades-toggle-title">Recent trades</span>
-        <span class="trades-toggle-sub" id="trades-toggle-sub"></span></span>
-        <span class="chev">▶</span>
-      </button>
-      <div class="trades-panel" id="trades-panel">
-        <div id="trades-list"></div>
-      </div>
-    </aside>
-  </div>
+  <aside class="trades-col">
+    <button type="button" class="trades-toggle" id="trades-toggle" aria-expanded="false">
+      <span><span id="trades-toggle-title">Recent trades</span>
+      <span class="trades-toggle-sub" id="trades-toggle-sub"></span></span>
+      <span class="chev">▶</span>
+    </button>
+    <div class="trades-panel" id="trades-panel">
+      <div id="trades-list"></div>
+    </div>
+  </aside>
+  <div class="tl-grid" id="tl-grid"></div>
   <div class="foot">Updates every minute · dependency-arbitrage (parent UP) lane · no real money</div>
 </main>
 <script>
