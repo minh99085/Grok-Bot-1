@@ -174,9 +174,10 @@ UPDATES = {
     # (atomic risk-free arb + dep-arb conjunction/Claude-gated nested), no directional noise.
     "PULSE_ARB_ENABLED": "1",
     "PULSE_ARB_FEES": "0.0",
-    "PULSE_ARB_EPSILON": "0.003",
-    "PULSE_ARB_EPSILON_5M": "0.003",
-    "PULSE_ARB_EPSILON_15M": "0.003",
+    # Lowered 2026-07-01: 1415 near-misses within 2c at 0.003 — capture thin dutch-book edges.
+    "PULSE_ARB_EPSILON": "0.001",
+    "PULSE_ARB_EPSILON_5M": "0.001",
+    "PULSE_ARB_EPSILON_15M": "0.001",
     "PULSE_DEPENDENCY_ARB_EPSILON": "0.03",
     # WS3-B: Fréchet conjunction floor — the only dep-arb path that may EXECUTE. It is true
     # risk-free arb (all nested children UP => parent UP), so it stays ON.
