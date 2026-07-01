@@ -304,6 +304,9 @@ class PulseConfig:
     claude_decider_enabled: bool = False      # Claude directional second-opinion (council member)
     claude_decider_model: str = ""
     claude_decider_timeout_s: float = 18.0
+    # ---- MONTE CARLO pricing (observe-only; correlated dep-arb conditional + fat tails) ----
+    mc_enabled: bool = False
+    mc_paths: int = 20000
     bregman_projection_enabled: bool = False  # WS4 Layer 2 diagnostics
     bregman_trade_authority: bool = False     # Bregman sizes Lane B when True
     bregman_alpha: float = 0.9
@@ -787,6 +790,9 @@ class PulseConfig:
             in ("1", "true", "yes", "on"),
             claude_decider_model=str(os.getenv("PULSE_CLAUDE_DECIDER_MODEL", "") or ""),
             claude_decider_timeout_s=_envf("PULSE_CLAUDE_DECIDER_TIMEOUT_S", 18.0),
+            mc_enabled=str(os.getenv("PULSE_MC_ENABLED", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            mc_paths=int(_envf("PULSE_MC_PATHS", 20000)),
             bregman_projection_enabled=str(os.getenv("PULSE_BREGMAN_PROJECTION_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             bregman_trade_authority=str(os.getenv("PULSE_BREGMAN_TRADE_AUTHORITY", "0"))
@@ -1513,6 +1519,7 @@ class PulseEngine:
             min_margin=self.cfg.llm_council_min_margin,
             min_members=self.cfg.llm_council_min_members)
         self._council_pending: list = []
+        self._mc_dep_analysis: list = []       # observe-only Monte Carlo dep-arb conditional pricing
         # OBSERVE-ONLY TradingView indicator webhook intake (enabled only when a secret is set).
         # Alerts become candidate signals only; they can never place/resize/bypass a paper trade.
         self.tradingview = None
@@ -3826,6 +3833,49 @@ class PulseEngine:
                 still.append(p)
         self._council_pending = still[-2000:]
 
+    def _observe_mc_dep_arb(self, parent, child, entry_vwap: float, v, now: float) -> None:
+        """OBSERVE-ONLY: Monte Carlo price of the correlated dep-arb conditional (P(parent UP | child
+        UP)) + adverse-selection flag. Never affects the trade; fully wrapped so it can't break the
+        scan. This is the evidence layer: does MC catch the cheap-parent-UP adverse selection that the
+        nested heuristic missed?"""
+        try:
+            from engine.pulse import monte_carlo as mc
+            if not mc.HAVE_NUMPY:
+                return
+            s_now = self.price.current()
+            sigma = self.price.sigma_per_sec(now)
+            if s_now is None or not sigma or float(sigma) <= 0:
+                return
+
+            def _open_px(win):
+                snap = self.price.open_snapshot(getattr(win, "event_id", None))
+                px = getattr(snap, "price", None)
+                if px is None and isinstance(snap, (int, float)):
+                    px = float(snap)
+                return px
+
+            parent_d = {"open_ts": float(parent.open_ts), "close_ts": float(parent.close_ts),
+                        "s_open": _open_px(parent)}
+            child_d = {"open_ts": float(child.open_ts), "close_ts": float(child.close_ts),
+                       "s_open": _open_px(child)}
+            res = mc.mc_dependency_implication(
+                s_now=float(s_now), now=float(now), parent=parent_d, children=[child_d],
+                sigma_per_sec=float(sigma), entry_vwap=float(entry_vwap),
+                n_paths=int(self.cfg.mc_paths))
+            if res.get("available"):
+                self._mc_dep_analysis.append({
+                    "ts": round(float(now), 1),
+                    "parent": str(v.parent_window_key),
+                    "child": str((v.child_window_keys or [None])[0]),
+                    "entry_vwap": round(float(entry_vwap), 4),
+                    "constraint_type": getattr(v, "constraint_type", None),
+                    **{k: res.get(k) for k in (
+                        "p_parent_up", "p_parent_up_given_children_up", "implication_lift",
+                        "ev_per_dollar_given_children_up", "adverse_selection")}})
+                self._mc_dep_analysis = self._mc_dep_analysis[-30:]
+        except Exception:  # noqa: BLE001 — observe-only; never break the scan
+            pass
+
     def _schedule_cex_lead_grade(self, decision_id: str, price0, close_ts: float,
                                  sig: dict) -> None:
         """Queue a CEX-lead signal for grading at window close. The gradeable fields are SNAPSHOTTED
@@ -5014,6 +5064,8 @@ class PulseEngine:
                 max_entry = float(self.cfg.dependency_arb_max_entry_vwap)
                 min_entry = float(self.cfg.dependency_arb_min_entry_vwap)
                 entry_vwap = float(trade.get("entry_vwap") or 0)
+                if self.cfg.mc_enabled:
+                    self._observe_mc_dep_arb(parent, child, entry_vwap, v, now)
                 if entry_vwap > max_entry + 1e-9:
                     self.dep_arb_ledger.rejected_by_reason["entry_vwap_above_cap"] = (
                         int(self.dep_arb_ledger.rejected_by_reason.get(
@@ -5512,6 +5564,11 @@ class PulseEngine:
                             else {"enabled": False}),
             "claude_decider": (self.claude_decider.report() if self.claude_decider is not None
                                else {"enabled": False}),
+            "monte_carlo": {"enabled": bool(self.cfg.mc_enabled), "paths": int(self.cfg.mc_paths),
+                            "observe_only": True, "affects_trading": False,
+                            "note": ("correlated dep-arb conditional P(parent UP | children UP) + "
+                                     "adverse-selection flag; deterministic numpy MC, LLM-parameterizable"),
+                            "recent": self._mc_dep_analysis[-10:]},
             "verifier": (self.verifier.report() if self.verifier is not None else {"enabled": False}),
             "research_loop": (self.research_loop.report() if self.research_loop is not None
                               else {"enabled": False}),

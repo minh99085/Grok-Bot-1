@@ -35,6 +35,10 @@ UPDATES = {
     "PULSE_LLM_COUNCIL_MIN_MARGIN": "0.02",
     "PULSE_LLM_COUNCIL_MIN_MEMBERS": "2",
     "PULSE_CLAUDE_DECIDER_ENABLED": "1",
+    # Monte Carlo (observe-only): correlated dep-arb conditional P(parent UP | children UP) +
+    # adverse-selection flag. Deterministic numpy sim (LLM-parameterizable); does NOT affect trades.
+    "PULSE_MC_ENABLED": "1",
+    "PULSE_MC_PATHS": "20000",
     "PULSE_GROK_DECIDER_MIN_CONFIDENCE": "0.62",
     "PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN": "0.08",
     # Trinity profile: fast 15s tick (arb) + tiered Grok (profit/API/soak balance).
