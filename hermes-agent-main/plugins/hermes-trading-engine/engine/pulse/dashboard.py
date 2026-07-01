@@ -128,7 +128,7 @@ main{max-width:min(1680px,100%);margin:0 auto;padding:14px 20px 24px}
     </div>
   </aside>
   <div class="tl-grid" id="tl-grid"></div>
-  <div class="foot">Updates every minute · dependency-arbitrage (parent UP) lane · no real money</div>
+  <div class="foot">Updates every minute · directional (LLM council + best-EV) &amp; dependency-arbitrage lanes · no real money</div>
 </main>
 <script>
 const TRADE_LIMIT=50;
@@ -235,6 +235,45 @@ function buildRows(s){
   const cap=s.capital||{};
   const statusAge=(Date.now()/1000)-(Number(s.ts)||0);
   const pnl=dep.realized_profit_usd||0;
+
+  // ---- Directional / LLM council (the lane actively trading now) ----
+  addSection(rows,'Directional · LLM council');
+  const led=s.ledger||{};
+  const dirPnl=cap.realized_pnl_usd;
+  addRow(rows,'Directional trades',
+    f(led.trades,0)+' settled'+(led.win_rate!=null?' · '+(led.win_rate*100).toFixed(0)+'% win':''),
+    'P&amp;L '+usd(dirPnl)+' · '+f(cap.open_positions,0)+' open ($'+f(cap.open_exposure_usd,2)+' at risk)',
+    (dirPnl==null)?'yellow':(dirPnl>=0?'green':'yellow'));
+  const lc=s.llm_council||{};
+  if(lc.enabled){
+    addRow(rows,'LLM council',
+      f(lc.trade_decisions,0)+' trade calls · '+f(lc.evaluations,0)+' windows judged',
+      'Ensemble vote (quant + Grok + Claude + TV) with best-EV side pick; execution gate stays final',
+      'green');
+    const mem=lc.members||{};
+    Object.keys(mem).sort().forEach(k=>{
+      const m=mem[k]||{};
+      const st=(m.stance||'cold');
+      const light=(st==='follow')?'green':(st==='fade'?'yellow':'yellow');
+      addRow(rows,'· member '+k,
+        st.toUpperCase()+(m.accuracy!=null?' · '+(m.accuracy*100).toFixed(0)+'% acc':'')+(m.n?' (n='+m.n+')':' (cold)'),
+        'blend weight '+f(m.weight,2)+(m.faded?' · view INVERTED (fading a contrarian signal)':''),
+        light);
+    });
+  }
+  const mc=s.monte_carlo||{};
+  if(mc.enabled){
+    const fg=mc.flag_grading||{};
+    addRow(rows,'Monte Carlo gate',mc.dep_arb_gate?'ON — vetoes negative-EV dep-arb':'observe only',
+      'adverse-selection flag precision '+(fg.flag_precision!=null?(fg.flag_precision*100).toFixed(0)+'%':'—')+' · graded '+f(fg.graded,0),
+      mc.dep_arb_gate?'green':'yellow');
+  }
+  const gd=s.grok_decider||{};
+  const cd=s.claude_decider||{};
+  addRow(rows,'LLM engines',
+    'Grok '+(gd.mode||'—')+' · Claude '+(((cd.decided||0)>0)?'live':((cd.errors||0)>0?'erroring':'idle')),
+    'Grok decided '+f(gd.decided,0)+' (err '+f(gd.errors,0)+') · Claude decided '+f(cd.decided,0)+' (err '+f(cd.errors,0)+')',
+    (((cd.errors||0)>10)||((gd.errors||0)>80))?'yellow':'green');
 
   addSection(rows,'Money — dependency arbitrage');
   addRow(rows,'Dep-arb profit/loss',usd(pnl),
