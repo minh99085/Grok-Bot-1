@@ -31,6 +31,32 @@ def test_council_grades_each_tv_timeframe_independently():
     assert rep["members"]["tv_2m"]["prior"] == 0.3           # any tv_* member starts low
 
 
+def test_council_forget_retires_members_and_blocks_repopulation():
+    c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
+    for _ in range(25):
+        c.grade({"tv_2m": 0.8, "tv_15m": 0.2}, outcome_up=False)
+    assert "tv_2m" in c.report()["members"]
+    # retire tv_2m (operator removed the 2m timeframe)
+    c.forget(["tv_2m"])
+    rep = c.report()
+    assert "tv_2m" not in rep["members"]          # purged from report
+    assert "tv_15m" in rep["members"]             # survivor kept
+    # an OLD pending snapshot that still references tv_2m must not repopulate it
+    c.grade({"tv_2m": 0.8, "tv_15m": 0.2}, outcome_up=False)
+    assert "tv_2m" not in c.report()["members"]
+    # and tv_2m never contributes a vote to the consensus
+    out = c.decide({"tv_2m": 0.99, "tv_15m": 0.2})
+    assert "tv_2m" not in (out.get("stances") or {})
+
+
+def test_council_load_state_drops_ignored_members():
+    c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
+    c.forget(["tv_4m"])
+    c.load_state({"stats": {"tv_4m": {"n": 30, "correct": 5}, "tv_15m": {"n": 30, "correct": 25}}})
+    rep = c.report()
+    assert "tv_4m" not in rep["members"] and "tv_15m" in rep["members"]
+
+
 def test_council_fades_anti_predictive_member():
     c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
     # TV member is contrarian: says UP (p_up 0.8) but outcome is DOWN, repeatedly.

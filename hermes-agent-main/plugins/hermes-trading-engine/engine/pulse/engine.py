@@ -1549,6 +1549,10 @@ class PulseEngine:
             min_agreement=self.cfg.llm_council_min_agreement,
             min_margin=self.cfg.llm_council_min_margin,
             min_members=self.cfg.llm_council_min_members)
+        # Retire per-TF council members for dropped TradingView timeframes so their stale graded
+        # stats vanish from the council + report (and old pending snapshots can't repopulate them).
+        if self.cfg.tradingview_drop_timeframes:
+            self.llm_council.forget("tv_%sm" % t for t in self.cfg.tradingview_drop_timeframes)
         self._council_pending: list = []
         self._mc_dep_analysis: list = []       # observe-only Monte Carlo dep-arb conditional pricing
         self._mc_dep_pending: list = []        # pending MC-flag grades (resolved at parent close)

@@ -166,9 +166,20 @@ class LLMCouncil:
         self.priors = dict(priors or self.DEFAULT_PRIORS)
         self._lock = threading.Lock()
         self._stats: dict = {}          # name -> {"n","correct"}
+        self.ignore_members: set = set()  # retired members: never vote, grade, or report
         self.decisions = 0              # consensus dicts produced with trade=True
         self.evaluations = 0           # decide() calls
         self.graded = 0
+
+    def forget(self, names) -> None:
+        """Retire members (e.g. TFs the operator removed): drop their graded stats and ignore any
+        future view/grade for them so they vanish from the council + report. Idempotent."""
+        with self._lock:
+            for n in (names or ()):
+                self.ignore_members.add(str(n))
+            for n in list(self._stats):
+                if n in self.ignore_members:
+                    del self._stats[n]
 
     def _weight_locked(self, name: str) -> float:
         s = self._stats.get(name) or {"n": 0, "correct": 0}
@@ -190,7 +201,7 @@ class LLMCouncil:
             votes = []
             stances = {}
             for n, p in (views or {}).items():
-                if p is None:
+                if p is None or n in self.ignore_members:
                     continue
                 stance, weight, invert = self._stance_locked(n)
                 eff = (1.0 - float(p)) if invert else float(p)
@@ -210,7 +221,7 @@ class LLMCouncil:
         with self._lock:
             up = bool(outcome_up)
             for name, p in (views or {}).items():
-                if p is None:
+                if p is None or name in self.ignore_members:
                     continue
                 s = self._stats.setdefault(name, {"n": 0, "correct": 0})
                 s["n"] += 1
@@ -221,6 +232,8 @@ class LLMCouncil:
         with self._lock:
             members = {}
             for name in set(list(self.priors) + list(self._stats)):
+                if name in self.ignore_members:
+                    continue
                 s = self._stats.get(name) or {"n": 0, "correct": 0}
                 acc = round(s["correct"] / s["n"], 4) if s["n"] else None
                 stance, weight, invert = self._stance_locked(name)
@@ -255,7 +268,8 @@ class LLMCouncil:
             return
         with self._lock:
             self._stats = {n: {"n": int(s.get("n", 0) or 0), "correct": int(s.get("correct", 0) or 0)}
-                           for n, s in (data.get("stats") or {}).items()}
+                           for n, s in (data.get("stats") or {}).items()
+                           if n not in self.ignore_members}
             self.decisions = int(data.get("decisions", 0) or 0)
             self.evaluations = int(data.get("evaluations", 0) or 0)
             self.graded = int(data.get("graded", 0) or 0)
