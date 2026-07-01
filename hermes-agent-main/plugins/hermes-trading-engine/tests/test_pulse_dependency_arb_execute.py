@@ -141,6 +141,20 @@ def test_load_state_recomputes_capped_settled_pnl():
     assert ledger.report()["booking"]["capture_ratio"] is not None
 
 
+def test_report_win_loss_summary_counts_settled_outcomes():
+    ledger = DependencyArbLedger(execute_enabled=True)
+    ledger.positions = {
+        "w1": {"status": "settled", "won": True, "realized_profit_usd": 3.0, "close_ts": 1.0},
+        "w2": {"status": "settled", "won": False, "realized_profit_usd": -2.0, "close_ts": 2.0},
+        "w3": {"status": "settled", "realized_profit_usd": 1.5, "close_ts": 3.0},   # win by P&L sign
+        "w4": {"status": "settled", "realized_profit_usd": 0.0, "close_ts": 4.0},   # break-even: neither
+        "w5": {"status": "open", "close_ts": 5.0},                                   # not settled
+    }
+    wl = ledger.report()["win_loss"]
+    assert wl["wins"] == 2 and wl["losses"] == 1        # w1,w3 win; w2 loss; w4 break-even; w5 open
+    assert wl["win_rate"] == round(2 / 3, 4)
+
+
 def test_realized_profit_capped_below_theoretical_on_low_entry():
     trade = {
         "shares": 5000.0,

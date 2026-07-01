@@ -694,6 +694,29 @@ class DependencyArbLedger:
         )
         self.realized_profit_usd = round(total, 6)
 
+    def _win_loss_summary(self) -> dict:
+        """Settled win/loss tally for the lane scorecard: a trade is a win if it settled to ``won`` or
+        (absent that flag) positive realized P&L; a loss if it settled to ``not won`` or negative P&L.
+        Break-even (exactly $0) counts as neither, so ``wins + losses`` may be < ``settled``."""
+        wins = losses = 0
+        for p in self.positions.values():
+            if p.get("status") != "settled":
+                continue
+            won = p.get("won")
+            if won is None:
+                rp = p.get("realized_profit_usd")
+                if rp is None:
+                    continue
+                rp = float(rp)
+                won = True if rp > 0 else (False if rp < 0 else None)
+            if won is True:
+                wins += 1
+            elif won is False:
+                losses += 1
+        settled = wins + losses
+        return {"wins": wins, "losses": losses,
+                "win_rate": (round(wins / settled, 4) if settled else None)}
+
     def _booking_summary(self) -> dict:
         settled = [p for p in self.positions.values() if p.get("status") == "settled"]
         theoretical = round(sum(float(p.get("theoretical_profit_usd")
@@ -737,6 +760,7 @@ class DependencyArbLedger:
                 "executed": self.executed, "settled": self.settled,
                 "open": sum(1 for p in self.positions.values() if p.get("status") == "open"),
                 "realized_profit_usd": round(self.realized_profit_usd, 4),
+                "win_loss": self._win_loss_summary(),
                 "booking": self._booking_summary(),
                 "dependency_arb_calibration": self.calibration.report(),
                 "kelly_active": gate["kelly_active"],

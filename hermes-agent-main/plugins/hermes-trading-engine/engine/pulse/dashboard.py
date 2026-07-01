@@ -233,12 +233,41 @@ function buildRows(s){
   const book=dep.booking||{};
   const loops=s.loops||{};
   const cap=s.capital||{};
+  const led=s.ledger||{};
+  const arb=s.arbitrage||{};
   const statusAge=(Date.now()/1000)-(Number(s.ts)||0);
   const pnl=dep.realized_profit_usd||0;
 
+  // ---- Per-lane scorecard: total trades / wins / losses / win-rate / P&L for each trading lane ----
+  addSection(rows,'Trading lanes — scorecard');
+  function laneRow(name,settled,wins,losses,wr,pnlv,open,note){
+    const parts=[f(settled,0)+' settled'];
+    if(wins!=null||losses!=null)parts.push(f(wins,0)+'W / '+f(losses,0)+'L');
+    if(wr!=null)parts.push((wr*100).toFixed(0)+'% win');
+    const light=((settled||0)===0)?'yellow':(pnlv==null?'yellow':(pnlv>=0?'green':'red'));
+    addRow(rows,name,parts.join(' · '),
+      'P&amp;L '+usd(pnlv)+' · '+f(open,0)+' open'+(note?' · '+note:''),light);
+  }
+  const dSettled=(led.settled!=null?led.settled:led.trades);
+  const dLosses=(dSettled!=null&&led.wins!=null)?(dSettled-led.wins):null;
+  laneRow('Directional (LLM council)',dSettled,led.wins,dLosses,led.win_rate,
+    cap.realized_pnl_usd,cap.open_positions,(s.directional_risk||{}).directional_enabled?'ON':'OFF');
+  const dwl=dep.win_loss||{};
+  laneRow('Dependency arbitrage',dep.settled,dwl.wins,dwl.losses,dwl.win_rate,
+    (cap.dependency_arb_realized_pnl_usd!=null?cap.dependency_arb_realized_pnl_usd:dep.realized_profit_usd),
+    dep.open,(dep.enabled?'execute ON':'watch only'));
+  const awl=arb.win_loss||{};
+  laneRow('Dutch-book arbitrage (risk-free)',arb.settled,awl.wins,awl.losses,awl.win_rate,
+    (cap.arb_realized_pnl_usd!=null?cap.arb_realized_pnl_usd:arb.realized_profit_usd),arb.open);
+  if(cap.total_realized_pnl_usd!=null){
+    addRow(rows,'All lanes combined',
+      f((dSettled||0)+(dep.settled||0)+(arb.settled||0),0)+' settled across 3 lanes',
+      'Total realized P&amp;L '+usd(cap.total_realized_pnl_usd),
+      cap.total_realized_pnl_usd>=0?'green':'yellow');
+  }
+
   // ---- Directional / LLM council (the lane actively trading now) ----
   addSection(rows,'Directional · LLM council');
-  const led=s.ledger||{};
   const dirPnl=cap.realized_pnl_usd;
   addRow(rows,'Directional trades',
     f(led.trades,0)+' settled'+(led.win_rate!=null?' · '+(led.win_rate*100).toFixed(0)+'% win':''),

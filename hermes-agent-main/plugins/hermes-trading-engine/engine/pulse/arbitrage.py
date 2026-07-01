@@ -279,9 +279,31 @@ class ArbLedger:
     def open_positions(self) -> list:
         return [p for p in self.positions.values() if p["status"] == "open"]
 
+    def _win_loss_summary(self) -> dict:
+        """Settled win/loss tally (risk-free dutch book: P&L = guaranteed_profit, so losses should be
+        ~0). Win = settled with positive booked profit, loss = negative, break-even = neither."""
+        wins = losses = 0
+        for p in self.positions.values():
+            if p.get("status") != "settled":
+                continue
+            pnl = p.get("realized_profit_usd")
+            if pnl is None:
+                pnl = p.get("guaranteed_profit_usd")
+            if pnl is None:
+                continue
+            pnl = float(pnl)
+            if pnl > 0:
+                wins += 1
+            elif pnl < 0:
+                losses += 1
+        settled = wins + losses
+        return {"wins": wins, "losses": losses,
+                "win_rate": (round(wins / settled, 4) if settled else None)}
+
     def report(self) -> dict:
         return {"strategy": "within_window_arbitrage", "paper_only": True, "risk_free": True,
                 "segregated_from_directional": True, "detected_actionable": self.detected,
+                "win_loss": self._win_loss_summary(),
                 "arb_candidates": self.candidates, "arb_scan_count": self.scans,
                 "windows_scanned": self.windows_scanned,
                 "windows_by_series": dict(self.windows_by_series),

@@ -114,6 +114,8 @@ def test_arb_ledger_books_settles_segregated():
     rep = led.report()
     assert rep["risk_free"] is True and rep["segregated_from_directional"] is True
     assert rep["settled"] == 1 and round(rep["realized_profit_usd"], 4) == 1.1
+    # risk-free lane: the one settled position is a win, zero losses
+    assert rep["win_loss"] == {"wins": 1, "losses": 0, "win_rate": 1.0}
     # deterministic: profit booked regardless of which side won (no outcome dependence)
     st = led.to_state(); led2 = ArbLedger(); led2.load_state(st)
     assert led2.executed == 1 and round(led2.realized_profit_usd, 4) == 1.1
