@@ -125,7 +125,11 @@ UPDATES = {
     "PULSE_STOP_MIN_SAMPLES": "60",
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 8-11).
     "PULSE_TICK_SECONDS": "15",
-    "PULSE_MAX_PRICE": "0.55",
+    # Widened 0.55->0.65 (2026-07-01 "let bot trade"): an UP-leaning market prices UP contracts above
+    # 0.55, so grok_max_price was the binding choke on council UP trades. Let the execution-quality EV
+    # gate (needs consensus p_up > price) + reward/risk (0.50 -> caps ~0.667) be the real arbiters
+    # rather than a flat price cap. Beyond this, entries are gated only by honest +EV, which stays.
+    "PULSE_MAX_PRICE": "0.65",
     # [TV-LOCK] context gate off — TV never blocks entries.
     "PULSE_TV_CONTEXT_GATE": "0",
     # TV confidence tier: modulate min_edge/max_price at 15m sweet spot (not a trade gate).
