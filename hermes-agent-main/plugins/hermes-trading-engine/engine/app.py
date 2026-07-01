@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from starlette.middleware.gzip import GZipMiddleware
 
 from engine.pulse.dashboard import DASHBOARD_HTML as _DASHBOARD_HTML
-from engine.pulse.dashboard_trades import dep_arb_stats, dep_arb_trades_for_dashboard
+from engine.pulse.dashboard_trades import dep_arb_stats, recent_trades_for_dashboard
 
 logger = logging.getLogger("hte.app")
 
@@ -75,7 +75,10 @@ def btc_pulse_ledger(summary: bool = Query(False)) -> dict:
     if not led:
         return {"available": False, "reason": "no pulse ledger yet."}
     if summary:
-        positions = dep_arb_trades_for_dashboard(led, limit=50)
+        # Merged newest-first across ALL lanes (directional + dep-arb + dutch-arb) so the dashboard's
+        # "last 50 trades" updates in real time with whatever is actually trading (directional is the
+        # active lane now; dep-arb is stale/gated). Was dep-arb-only, which looked frozen.
+        positions = recent_trades_for_dashboard(led, limit=50)
         return {
             "available": True,
             "paper_only": led.get("paper_only", True),

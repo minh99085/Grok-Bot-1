@@ -19,6 +19,16 @@ def _directional_row(pos: dict) -> dict:
     row = dict(pos)
     row.setdefault("trade_type", "directional")
     row["sort_ts"] = _sort_ts(row)
+    # ensure the dashboard's label field is populated (it reads research.market_series)
+    res = dict(row.get("research") or {})
+    res.setdefault("series_label", "directional")
+    if not res.get("market_series"):
+        res["market_series"] = str(row.get("title") or res.get("series_label") or "directional")[:40]
+    row["research"] = res
+    # normalize side to a readable UP/DOWN tag (directional stores lowercase up/down)
+    _s = str(row.get("side") or "").lower()
+    if _s in ("up", "down"):
+        row["side"] = _s.upper()
     return row
 
 
