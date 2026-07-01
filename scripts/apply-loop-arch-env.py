@@ -185,6 +185,12 @@ UPDATES = {
     "PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S": "60",
     "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.52",
+    # A1 edge fix (2026-07-01, ledger evidence n=128): cheap parent-UP entries are
+    # adverse-selection. Ledger by entry_vwap: <0.50 nested lost -$440; floor at 0.50
+    # flips the nested lane -$410 -> +$38 (WR 0.59->0.72, keeps 82/118) while the
+    # positive dependency_bregman path stays WR 1.0. epsilon/max_entry_vwap tuning did
+    # NOT help (magnitude 0.1-0.2 was the -$275 cluster), so only the min floor is set.
+    "PULSE_DEPENDENCY_ARB_MIN_ENTRY_VWAP": "0.50",
     "PULSE_GROK_DEPENDENCY_ENABLED": "1",
     "PULSE_GROK_DEPENDENCY_INTERVAL_S": "180",
     # Grok 60s convergence predictor DISABLED (operator-authorized 2026-06-30): live accuracy was 4%
@@ -223,7 +229,9 @@ UPDATES = {
     "PULSE_DEPENDENCY_ARB_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_EXECUTE": "1",
     "PULSE_GREEN_PATH_ENABLED": "1",
-    "PULSE_DEPENDENCY_ARB_MAX_USD": "50",
+    # Bet size reduced to $5/bet (operator-authorized 2026-07-01): caps per-trade downside
+    # on the dep-arb lane while the min-entry-vwap edge fix is validated on a fresh soak.
+    "PULSE_DEPENDENCY_ARB_MAX_USD": "5",
     "PULSE_BREGMAN_PROJECTION_ENABLED": "1",
     "PULSE_BREGMAN_TRADE_AUTHORITY": "0",
     "PULSE_BREGMAN_ALPHA": "0.9",

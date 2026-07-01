@@ -163,6 +163,73 @@ def test_execute_disabled_does_not_book():
     assert ledger.executed == 0
 
 
+def test_min_entry_vwap_floor_config_env(monkeypatch):
+    from engine.pulse.engine import PulseConfig
+    # Default: floor disabled (0.0) => no behavior change.
+    assert PulseConfig().dependency_arb_min_entry_vwap == 0.0
+    # from_env with no override stays disabled.
+    monkeypatch.delenv("PULSE_DEPENDENCY_ARB_MIN_ENTRY_VWAP", raising=False)
+    assert PulseConfig.from_env().dependency_arb_min_entry_vwap == 0.0
+    # Operator sets the floor => picked up by from_env.
+    monkeypatch.setenv("PULSE_DEPENDENCY_ARB_MIN_ENTRY_VWAP", "0.50")
+    assert PulseConfig.from_env().dependency_arb_min_entry_vwap == 0.50
+
+
+def _dep_arb_engine(tmp_path, min_floor):
+    """Engine wired for a single nested-implication dep-arb violation at entry_vwap ~0.42."""
+    from engine.pulse.price import PulsePriceFeed
+    from engine.pulse.fair_value import RollingVol
+    from engine.pulse.engine import PulseEngine, PulseConfig
+    t0 = 10_000_000.0
+    parent = PulseWindow(
+        event_id="p15", market_id="mp", slug="btc-up-or-down-15m", title="15m",
+        open_ts=t0, close_ts=t0 + 900, up_token_id="UP", down_token_id="DP",
+        window_seconds=900, series_label="15m")
+    child = PulseWindow(
+        event_id="c5", market_id="mc", slug="btc-up-or-down-5m", title="5m",
+        open_ts=t0 + 60, close_ts=t0 + 360, up_token_id="UC", down_token_id="DC",
+        window_seconds=300, series_label="5m")
+    parent.up_book = _book(0.42)   # entry_vwap ~0.42: below a 0.50 floor, below the 0.52 cap
+    parent.down_book = _book(0.55)
+    child.up_book = _book(0.60)    # child UP mid >> parent UP mid => nested violation
+    child.down_book = _book(0.37)
+
+    class _Mkt:
+        def active_windows(self, now=None, **kw):
+            return [parent, child]
+
+        def hydrate_books(self, w):
+            return w
+
+        def fetch_resolution(self, market_id):
+            return True
+
+    feed = PulsePriceFeed(fetcher=lambda: 64000.0, source_name="rtds_chainlink",
+                          vol=RollingVol(window_s=900, min_samples=2), max_open_lag_s=9999.0)
+    cfg = PulseConfig(
+        tick_seconds=1.0, data_dir=str(tmp_path), tradingview_webhook_port=0,
+        dependency_arb_enabled=True, dependency_arb_execute_enabled=True,
+        dependency_arb_nested_execute=True, dep_arb_verifier_enabled=False,
+        dependency_arb_epsilon=0.02, dependency_arb_max_entry_vwap=0.52,
+        dependency_arb_min_entry_vwap=min_floor)
+    eng = PulseEngine(cfg, market_feed=_Mkt(), price_feed=feed)
+    return eng, parent, child, t0
+
+
+def test_min_entry_vwap_floor_gate_rejects_cheap_entry(tmp_path):
+    # Floor OFF (0.0): the cheap-entry nested trade is NOT floor-rejected and books.
+    eng0, parent, child, t0 = _dep_arb_engine(tmp_path, min_floor=0.0)
+    eng0._scan_dependency_arb([parent, child], now=t0 + 100)
+    assert eng0.dep_arb_ledger.rejected_by_reason.get("entry_vwap_below_floor", 0) == 0
+    assert eng0.dep_arb_ledger.executed >= 1
+
+    # Floor 0.50: the same entry_vwap ~0.42 trade is rejected by the floor and does not book.
+    eng1, parent1, child1, t1 = _dep_arb_engine(tmp_path, min_floor=0.50)
+    eng1._scan_dependency_arb([parent1, child1], now=t1 + 100)
+    assert eng1.dep_arb_ledger.rejected_by_reason.get("entry_vwap_below_floor", 0) >= 1
+    assert eng1.dep_arb_ledger.executed == 0
+
+
 def test_dep_arb_bucket_bleeding_halts_losing_bucket():
     cal = DependencyArbCalibration()
     for _ in range(5):
