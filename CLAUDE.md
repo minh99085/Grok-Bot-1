@@ -25,8 +25,13 @@ Set by operator 2026-06-29. Read this at session start.
    fine to do autonomously once tests pass and it's conflict-free.
 
 ## How deploy works (so "make it run on the bot" = land on main)
-- The VPS runs `origin/main` (sync-vps.ps1). Feature branch -> PR -> merge to main -> operator
-  runs the VPS sync. So to ship: get it onto main, green and conflict-free.
+- **Standing operator rule (2026-07-01, ALWAYS): push every change to `main` AND to the VPS.**
+  Don't stop at a feature branch/PR — land it on `main`, then deploy to the VPS. **Once deployed,
+  remove orphans and rebuild the container on the VPS** (`docker compose down --remove-orphans` →
+  `build` → `up -d --force-recreate --remove-orphans`). Full sequence + targets:
+  `.grok/rules/vps-deploy-mandatory.md`.
+- The VPS runs `origin/main` (sync-vps.ps1). So to ship: get it onto main (green, conflict-free),
+  push to main, then deploy + orphan-cleanup + rebuild on the VPS.
 - Keep every branch rebased on current main, tests green, no new failures vs the pre-existing
   baseline (~50 stale down-only tests on main).
 

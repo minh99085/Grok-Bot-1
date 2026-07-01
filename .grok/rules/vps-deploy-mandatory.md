@@ -1,5 +1,9 @@
 # VPS deploy — mandatory sequence (operator rule)
 
+**Operator memory (2026-07-01, ALWAYS): push every change to `main` AND to the VPS.** Don't stop
+at a feature branch/PR — land the change on `main`, push, then deploy to the VPS. **Once done,
+remove orphans and rebuild the container on the VPS.**
+
 **Operator memory (ALWAYS):** After every VPS sync, **always remove orphans and rebuild** —
 `docker compose down --remove-orphans` → `build` → `up -d --force-recreate --remove-orphans`.
 Use `.\scripts\sync-vps.ps1` (default; rebuild ON). **Never** `-SkipRebuild` unless the operator
