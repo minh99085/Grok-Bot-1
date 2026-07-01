@@ -84,6 +84,25 @@ def council_consensus(votes: list, *, min_agreement: float = 0.60,
     }
 
 
+def best_ev_side(p_up, up_ask, down_ask, *, min_edge: float = 0.0):
+    """Pick the side with the highest per-$1 EV = P(side) - ask, given a consensus ``p_up`` and the
+    two ask prices. Returns ``(side, ev)`` for the best side IF it clears ``min_edge``, else
+    ``(None, ev)``. Unlike favorite-by-probability, this takes the CHEAP underdog when it is
+    underpriced (high reward/risk, clears the price cap) and refuses to overpay for the favorite."""
+    if p_up is None:
+        return None, None
+    p_up = float(p_up)
+    evs = []
+    if up_ask is not None:
+        evs.append(("up", p_up - float(up_ask)))
+    if down_ask is not None:
+        evs.append(("down", (1.0 - p_up) - float(down_ask)))
+    if not evs:
+        return None, None
+    side, ev = max(evs, key=lambda z: z[1])
+    return (side if ev >= float(min_edge) else None), round(ev, 4)
+
+
 class LLMCouncil:
     """Stateful council: holds each member's graded accuracy, derives live weights, produces the
     per-window consensus, and grades members vs realized outcomes. Thread-safe; restart-safe via

@@ -301,6 +301,7 @@ class PulseConfig:
     llm_council_min_agreement: float = 0.60
     llm_council_min_margin: float = 0.02
     llm_council_min_members: int = 2
+    council_best_ev: bool = False             # pick side by max(prob-ask), not favorite-by-probability
     claude_decider_enabled: bool = False      # Claude directional second-opinion (council member)
     claude_decider_model: str = ""
     claude_decider_timeout_s: float = 18.0
@@ -789,6 +790,8 @@ class PulseConfig:
             llm_council_min_agreement=_envf("PULSE_LLM_COUNCIL_MIN_AGREEMENT", 0.60),
             llm_council_min_margin=_envf("PULSE_LLM_COUNCIL_MIN_MARGIN", 0.02),
             llm_council_min_members=int(_envf("PULSE_LLM_COUNCIL_MIN_MEMBERS", 2)),
+            council_best_ev=str(os.getenv("PULSE_COUNCIL_BEST_EV", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
             claude_decider_enabled=str(os.getenv("PULSE_CLAUDE_DECIDER_ENABLED", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
             claude_decider_model=str(os.getenv("PULSE_CLAUDE_DECIDER_MODEL", "") or ""),
@@ -2246,12 +2249,32 @@ class PulseEngine:
                 council_dec = self.llm_council.decide(_council_views)
                 dr.council = council_dec
                 self._schedule_council_grade(mc.decision_id, snap.price, w.close_ts, _council_views)
-                if council_dec.get("trade"):
-                    _cp = float(council_dec["consensus_p_up"])
+                _cp = council_dec.get("consensus_p_up")
+                _side_c = None
+                if (self.cfg.council_best_ev and _cp is not None
+                        and int(council_dec.get("n_members") or 0) >= self.cfg.llm_council_min_members):
+                    # BEST-EV side selection: pick the side with max (P(side) - ask), not the favorite
+                    # by probability. This takes the CHEAP underdog when it's underpriced (great
+                    # reward/risk, clears the price gates) and skips overpaying for the favorite.
+                    _cp = float(_cp)
+                    from engine.pulse.llm_council import best_ev_side
+                    up_ask = float(w.up_book.best_ask) if (w.up_book and w.up_book.best_ask) else None
+                    down_ask = (float(w.down_book.best_ask)
+                                if (w.down_book and w.down_book.best_ask) else None)
+                    best_side, best_ev = best_ev_side(_cp, up_ask, down_ask,
+                                                      min_edge=float(self.cfg.min_edge))
+                    if best_side is not None:
+                        _side_c = best_side
+                        dr.council = {**council_dec, "best_ev_side": best_side,
+                                      "best_ev": best_ev, "mode": "best_ev"}
+                elif council_dec.get("trade"):
+                    _side_c = council_dec["side"]
+                if _side_c is not None and _cp is not None:
+                    _cp = float(_cp)
                     # Synthesize an actionable decision so the existing follow path executes the
                     # council consensus through the same deterministic floor + Claude verifier (paper).
                     grok_dec = {
-                        "action": council_dec["side"], "p_up": round(_cp, 4),
+                        "action": _side_c, "p_up": round(_cp, 4),
                         "confidence": max(self.cfg.grok_decider_min_confidence,
                                           float(council_dec.get("confidence") or 0.0)),
                         "size_fraction": max(0.1, float(council_dec.get("confidence") or 0.0)),

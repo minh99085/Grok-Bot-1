@@ -37,6 +37,10 @@ UPDATES = {
     "PULSE_LLM_COUNCIL_MIN_AGREEMENT": "0.55",
     "PULSE_LLM_COUNCIL_MIN_MARGIN": "0.01",
     "PULSE_LLM_COUNCIL_MIN_MEMBERS": "2",
+    # Best-EV side selection (2026-07-01 "do it"): the council picks the side with max (P(side)-ask)
+    # instead of the favorite-by-probability. Takes the CHEAP underdog when it's underpriced (high
+    # reward/risk, clears the price cap) and refuses to overpay for the favorite -> unchokes fills.
+    "PULSE_COUNCIL_BEST_EV": "1",
     "PULSE_CLAUDE_DECIDER_ENABLED": "1",
     # Monte Carlo: correlated dep-arb conditional P(parent UP | children UP). Deterministic numpy sim.
     # GATE ON (operator 2026-07-01 "do it"): MC vetoes dep-arb entries whose conditional EV is clearly

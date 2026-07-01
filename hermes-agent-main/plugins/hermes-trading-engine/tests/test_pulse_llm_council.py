@@ -2,7 +2,30 @@
 
 from __future__ import annotations
 
-from engine.pulse.llm_council import council_consensus, member_weight, LLMCouncil
+from engine.pulse.llm_council import council_consensus, member_weight, LLMCouncil, best_ev_side
+
+
+def test_best_ev_picks_cheap_underdog_when_underpriced():
+    # p_up=0.55, UP favorite priced 0.90 (ev -0.35), DOWN underdog priced 0.30 (ev 0.45-0.30=0.15).
+    side, ev = best_ev_side(0.55, up_ask=0.90, down_ask=0.30, min_edge=0.01)
+    assert side == "down" and ev == 0.15          # takes the cheap +EV underdog, not the favorite
+
+
+def test_best_ev_picks_up_when_up_is_cheap_and_positive():
+    side, ev = best_ev_side(0.60, up_ask=0.50, down_ask=0.55, min_edge=0.01)
+    assert side == "up" and ev == 0.10
+
+
+def test_best_ev_no_trade_when_both_overpriced():
+    # both sides -EV (efficient/expensive market) -> no trade
+    side, ev = best_ev_side(0.55, up_ask=0.62, down_ask=0.50, min_edge=0.01)
+    assert side is None                            # best ev = -0.05 (down) < min_edge
+
+
+def test_best_ev_handles_missing_book():
+    side, ev = best_ev_side(0.7, up_ask=None, down_ask=0.20, min_edge=0.01)
+    assert side == "down" and ev == 0.10
+    assert best_ev_side(None, 0.5, 0.5)[0] is None
 
 
 def test_consensus_trades_when_members_agree_with_margin():
