@@ -22,10 +22,13 @@ if not ENV_PATH.exists():
 UPDATES = {
     "PULSE_DASHBOARD_BOT_LABEL": "Bot 1 · arb-first perfect-WR",
     "TRADINGVIEW_WEBHOOK_MIRROR_URL": "",
-    # Grok observe-only: decide + grade every window, never place/size a trade.
-    "PULSE_GROK_DECIDER_MODE": "shadow",
-    "PULSE_GROK_DECIDER_FOLLOW_FRACTION": "0",
-    "PULSE_GROK_DECIDER_EXPLORE_RATE": "0",
+    # LOCKS LIFTED (operator 2026-07-01 "remove all locks; make the loop learn+adjust"):
+    # Grok decider promoted shadow -> follow so it acts on real windows and is graded live by the
+    # verifier + loop. NOTE: Grok has been anti-predictive + API-erroring; the fail-closed verifier
+    # below still gates every follow, and the loop will fade it from real outcomes.
+    "PULSE_GROK_DECIDER_MODE": "follow",
+    "PULSE_GROK_DECIDER_FOLLOW_FRACTION": "0.5",
+    "PULSE_GROK_DECIDER_EXPLORE_RATE": "0.05",
     "PULSE_GROK_DECIDER_MIN_CONFIDENCE": "0.62",
     "PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN": "0.08",
     # Trinity profile: fast 15s tick (arb) + tiered Grok (profit/API/soak balance).
@@ -180,8 +183,9 @@ UPDATES = {
     "PULSE_DEPENDENCY_ARB_MAX_CHILD_WINDOW_AGE_S": "120",
     "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_OBSERVE": "1",
     "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_HORIZONS_S": "30,60,120",
-    # Off overnight: runtime auto_apply can flip nested_execute=0 on bleeding buckets.
-    "PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY": "0",
+    # LOCKS LIFTED (operator 2026-07-01): runtime self-tuning ON — the loop may auto-apply dep-arb
+    # experiments (e.g. flip nested_execute on bleeding buckets) from live settled evidence.
+    "PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY": "1",
     "PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S": "60",
     "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.52",
@@ -210,11 +214,11 @@ UPDATES = {
     "PULSE_DEP_ARB_VERIFIER_FAIL_OPEN": "0",
     "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT": "1",
     "PULSE_DEP_ARB_VERIFIER_MAX_CALLS_PER_HOUR": "40",
-    # Directional DISABLED (operator-authorized 2026-06-30): single-strategy bot — dependency-arb is
-    # the sole trading lane. Directional was DOWN-only data-collection (marginal: WR ~52%, PF ~1.09);
-    # it is turned off so the ledger/P&L isolates dep-arb. (DOWN-only / block-UP flags below are moot
-    # while this is 0.)
-    "PULSE_DIRECTIONAL_ENABLED": "0",
+    # LOCKS LIFTED (operator 2026-07-01 "remove all locks; make the loop learn+adjust"): directional
+    # ON so trades flow and feed every learner (learning-blend/edge-model/selectivity need settled
+    # samples; only 24 collected while this was off). Selectivity + allowlist + calibration now govern
+    # entries from live evidence instead of a static freeze.
+    "PULSE_DIRECTIONAL_ENABLED": "1",
     # Verifier: stop starving cold-start exploration with "when unsure, veto" — exploration trades
     # get a shrunk approve instead of a hard veto so settled data can be collected and the veto's
     # own quality graded. Capability gated; full effect once wired into the follow path.
@@ -222,8 +226,10 @@ UPDATES = {
     "PULSE_ARB_MAX_USD": "300",
     "PULSE_PRIMARY_EDGE_SOURCE": "arbitrage",
     "PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC": "0.10",
-    # DOWN-only directional: hard block every UP path (grok/cex/mispricing included).
-    "PULSE_DIRECTIONAL_DOWN_ONLY": "1",
+    # LOCKS LIFTED (operator 2026-07-01): DOWN-only removed so the loop can explore + grade UP.
+    # BLOCK_UP_UNTIL_PROMOTED stays 1 as the loop's OWN promotion gate — UP trades only once the
+    # allowlist/selectivity learner promotes it from evidence (that IS the loop adjusting, not a freeze).
+    "PULSE_DIRECTIONAL_DOWN_ONLY": "0",
     "PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED": "1",
     "PULSE_DIRECTIONAL_UP_RESTRICTIONS_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_ENABLED": "1",
@@ -233,7 +239,8 @@ UPDATES = {
     # on the dep-arb lane while the min-entry-vwap edge fix is validated on a fresh soak.
     "PULSE_DEPENDENCY_ARB_MAX_USD": "5",
     "PULSE_BREGMAN_PROJECTION_ENABLED": "1",
-    "PULSE_BREGMAN_TRADE_AUTHORITY": "0",
+    # LOCKS LIFTED (operator 2026-07-01): Bregman projection may now size dep-arb (was observe-only).
+    "PULSE_BREGMAN_TRADE_AUTHORITY": "1",
     "PULSE_BREGMAN_ALPHA": "0.9",
     "PULSE_BREGMAN_EPSILON_INIT": "0.1",
     "PULSE_BREGMAN_FW_MAX_ITERS": "50",
@@ -251,7 +258,9 @@ UPDATES = {
     "PULSE_RESEARCH_AVOID_MAX": "20",
     "PULSE_RESEARCH_FORBID_SIZE_INCREASE": "1",
     "PULSE_LEARNING_ENABLED": "1",
-    "PULSE_LEARNING_MIN_SAMPLES": "40",
+    # LOCKS LIFTED (operator 2026-07-01): activate the learning blend sooner (was 40; n=24 collected)
+    # so the learned edge model starts steering fair value now instead of staying observe-only.
+    "PULSE_LEARNING_MIN_SAMPLES": "20",
     "PULSE_LEARNING_RAMP_SAMPLES": "120",
     "PULSE_LEARNING_BENCH_MARGIN": "0.0",
     "PULSE_ARB_GLOBAL_MAX_OPEN_USD": "600",
@@ -261,7 +270,10 @@ UPDATES = {
     "PULSE_ARB_NONATOMIC_ENABLED": "1",
     "PULSE_ARB_NONATOMIC_SLIPPAGE_BPS": "50",
     "PULSE_SIZING_PROMOTION_GATED": "1",
-    "HERMES_SIZING_ENABLED": "0",
+    # LOCKS LIFTED (operator 2026-07-01): dynamic edge-proportional sizing ON (still bounded by the
+    # $5/bet dep-arb cap + bankroll caps + FORBID_SIZE_INCREASE, and promotion-gated so it scales
+    # only as learned edge proves out).
+    "HERMES_SIZING_ENABLED": "1",
     # TradingView INDEX:BTCUSD — 2m + 3m + 4m chart alerts (three charts, v6 ProfitGate).
     "PULSE_TV_FEATURE_SYMBOL": "BTCUSD",
     "TRADINGVIEW_ALLOWED_SYMBOLS": "BTCUSD,INDEX:BTCUSD,BTC/USD,BTC,XBTUSD",

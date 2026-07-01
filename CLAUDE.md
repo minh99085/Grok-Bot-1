@@ -36,6 +36,12 @@ Set by operator 2026-06-29. Read this at session start.
   baseline (~50 stale down-only tests on main).
 
 ## Current state / roadmap (update as you go)
+- **2026-07-01 — LOCKS LIFTED (operator "remove all locks; make the loop learn and adjust"):** soak/
+  learning lock, TV observe-only lock, and authority freeze lifted. Now ON: directional (DOWN+UP via
+  promotion gate), learning blend (min_samples 20), dynamic sizing, dep-arb experiment auto-apply,
+  Bregman + Grok trade authority. RETAINED and NON-NEGOTIABLE: PAPER ONLY (#3) + honest accounting
+  (#1) — arb epsilon 0.003, dep-arb outcome-settled, min-entry-vwap 0.50, $5/bet cap, verifier
+  fail-closed. Manifest enforcement emptied except retained invariants + API keys.
 - Live on main: dep-arb outcome-settled P&L + calibration, report-label fix, Kelly sizing (Lever C, OFF).
 - Built, branch `claude/arb-riskfree-capture` (WS4): cost-aware risk-free arb capture (non-atomic
   sim as per-opportunity cost filter, epsilon 0.003). Ready to merge+deploy.

@@ -1,4 +1,12 @@
-# Soak / learning collection lock (OPERATOR MANDATE)
+> **LIFTED 2026-07-01 (operator, current message): "deep scan bot and remove all locks you can find,
+> make sure loop engineering is learning and adjusting."** This soak/learning freeze is **no longer in
+> effect** — the closed loop now governs gates/sizing/authority from live settled evidence (directional
+> ON, learners affect trading, research + dep-arb experiment auto-apply ON, Bregman/Grok authority ON).
+> **RETAINED (never lifted):** PAPER ONLY and honest accounting — see
+> `scripts/pulse-babysit/frozen-env-keys.json` → `retained_invariants_never_lifted`. Content below is
+> kept for historical reference only.
+
+# Soak / learning collection lock (OPERATOR MANDATE — LIFTED 2026-07-01)
 
 **Locked:** 2026-06-27. While the bot is in **learning-collection mode**, agents may fine-tune
 only within the tunable bounds below. Everything else is frozen so coding sessions do not break

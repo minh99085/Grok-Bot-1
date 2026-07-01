@@ -1,4 +1,11 @@
-# TradingView observe-only lock (OPERATOR MANDATE — DO NOT CHANGE)
+> **LIFTED 2026-07-01 (operator, current message): "remove all locks you can find."** The TV
+> observe-only freeze is no longer enforced. NOTE: TradingView trade gates remain set to `0` (OFF) in
+> `apply-loop-arch-env.py` on purpose — TV signals are negative-alpha and, being currently stale
+> (~24h no fires), enabling them as gates would only *block* trades and starve the learners. TV intake
+> stays on as observe features. The loop may now adjust TV usage from evidence. Content below is
+> historical reference.
+
+# TradingView observe-only lock (OPERATOR MANDATE — LIFTED 2026-07-01)
 
 **Locked:** 2026-06-27. Operator directive: keep this setup forever; **never re-enable TV as a trade gate**, no matter how we tweak gates, strategy, babysit cycles, or WR targets.
 

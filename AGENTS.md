@@ -9,21 +9,25 @@ changes → measure on 15-min soak. See `.grok/rules/quant-team.md`.
 ## Roan / Bregman architecture (Phase 0+)
 
 5m brain, 15m hands — `docs/roan-bregman-architecture.md`. Promotion gates:
-`scripts/pulse-babysit/roan-bregman-promotion-scorecard.json`. Do not enable
-`PULSE_BREGMAN_TRADE_AUTHORITY` or `PULSE_DEPENDENCY_ARB_EXECUTE` until scorecard passes.
+`scripts/pulse-babysit/roan-bregman-promotion-scorecard.json`.
+**Promotion gate LIFTED 2026-07-01 (operator "remove all locks"):** `PULSE_DEPENDENCY_ARB_EXECUTE`
+and `PULSE_BREGMAN_TRADE_AUTHORITY` are now ON; the loop learns/grades their edge from live outcomes.
+Still **PAPER ONLY**.
 
-## Soak / learning collection lock (OPERATOR MANDATE)
+## Soak / learning collection lock (OPERATOR MANDATE — LIFTED 2026-07-01)
 
-While collecting ledger data for learning, follow `.grok/rules/soak-learning-lock.md` and
-`scripts/pulse-babysit/frozen-env-keys.json`. Run `validate-frozen-lock.py` before deploy.
-Do not tighten gates or re-enable TV authority during this phase unless the operator says so
-in the current message.
+**LIFTED 2026-07-01 (operator "remove all locks; make the loop learn and adjust").** The soak/learning
+freeze no longer applies — the closed loop governs gates/sizing/authority from live evidence. Still run
+`validate-frozen-lock.py` before deploy (now enforces only the retained invariants + API keys). See
+`.grok/rules/soak-learning-lock.md` and `scripts/pulse-babysit/frozen-env-keys.json`
+(`retained_invariants_never_lifted`).
 
-## TradingView observe-only lock (OPERATOR MANDATE — NEVER OVERRIDE)
+## TradingView observe-only lock (OPERATOR MANDATE — LIFTED 2026-07-01)
 
-TradingView is **observe-only forever** — not a trade gate. Do **not** re-enable MTF require/side-align,
-TV context, signal gate, or baseline TV stack blocks in env, code, or babysit fixes unless the operator
-explicitly says otherwise **in the current message**. Full frozen keys and behavior:
+**LIFTED 2026-07-01 (operator "remove all locks").** No longer enforced. NOTE: TV trade gates are
+still set to `0` (OFF) in `apply-loop-arch-env.py` on purpose — TV is negative-alpha and currently
+stale, so enabling gates would only block trades and starve the learners. TV intake stays on as
+observe features; the loop may adjust TV usage from evidence. Detail:
 `.grok/rules/tv-observe-only-lock.md`.
 
 ## Repository scope (ALWAYS follow)
