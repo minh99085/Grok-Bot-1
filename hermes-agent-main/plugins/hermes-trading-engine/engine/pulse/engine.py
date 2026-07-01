@@ -292,6 +292,10 @@ class PulseConfig:
     dependency_arb_mid_exit_enabled: bool = False
     dependency_arb_mid_exit_horizon_s: float = 60.0
     dependency_arb_max_entry_vwap: float = 0.52
+    # Minimum parent-UP entry price for a dep-arb fill. 0.0 = disabled (no floor).
+    # Cheap parent-UP entries are adverse-selection: the market correctly priced the
+    # parent as likely-DOWN, but the nested heuristic bet UP anyway (see ledger buckets).
+    dependency_arb_min_entry_vwap: float = 0.0
     bregman_projection_enabled: bool = False  # WS4 Layer 2 diagnostics
     bregman_trade_authority: bool = False     # Bregman sizes Lane B when True
     bregman_alpha: float = 0.9
@@ -764,6 +768,8 @@ class PulseConfig:
                 "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S", 60.0),
             dependency_arb_max_entry_vwap=_envf(
                 "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP", 0.52),
+            dependency_arb_min_entry_vwap=_envf(
+                "PULSE_DEPENDENCY_ARB_MIN_ENTRY_VWAP", 0.0),
             bregman_projection_enabled=str(os.getenv("PULSE_BREGMAN_PROJECTION_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             bregman_trade_authority=str(os.getenv("PULSE_BREGMAN_TRADE_AUTHORITY", "0"))
@@ -3116,6 +3122,7 @@ class PulseEngine:
             "mid_exit_enabled": bool(self.cfg.dependency_arb_mid_exit_enabled),
             "mid_exit_horizon_s": float(self.cfg.dependency_arb_mid_exit_horizon_s),
             "max_entry_vwap": float(self.cfg.dependency_arb_max_entry_vwap),
+            "min_entry_vwap": float(self.cfg.dependency_arb_min_entry_vwap),
             "clock_skew_params": {
                 "min_parent_book_age_s": self.cfg.dependency_arb_min_parent_book_age_s,
                 "max_child_book_age_s": self.cfg.dependency_arb_max_child_book_age_s,
@@ -4901,10 +4908,19 @@ class PulseEngine:
             )
             if trade:
                 max_entry = float(self.cfg.dependency_arb_max_entry_vwap)
-                if float(trade.get("entry_vwap") or 0) > max_entry + 1e-9:
+                min_entry = float(self.cfg.dependency_arb_min_entry_vwap)
+                entry_vwap = float(trade.get("entry_vwap") or 0)
+                if entry_vwap > max_entry + 1e-9:
                     self.dep_arb_ledger.rejected_by_reason["entry_vwap_above_cap"] = (
                         int(self.dep_arb_ledger.rejected_by_reason.get(
                             "entry_vwap_above_cap", 0) or 0) + 1)
+                    trade = None
+                elif min_entry > 0.0 and entry_vwap < min_entry - 1e-9:
+                    # Below the min parent-UP price floor: cheap-parent-UP entries are
+                    # adverse-selection (ledger: entry_vwap<0.5 nested lost ~$440).
+                    self.dep_arb_ledger.rejected_by_reason["entry_vwap_below_floor"] = (
+                        int(self.dep_arb_ledger.rejected_by_reason.get(
+                            "entry_vwap_below_floor", 0) or 0) + 1)
                     trade = None
             if trade:
                 from engine.pulse.dependency_arb import dep_arb_bucket_bleeding

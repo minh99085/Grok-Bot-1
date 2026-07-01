@@ -163,6 +163,18 @@ def test_execute_disabled_does_not_book():
     assert ledger.executed == 0
 
 
+def test_min_entry_vwap_floor_config_env(monkeypatch):
+    from engine.pulse.engine import PulseConfig
+    # Default: floor disabled (0.0) => no behavior change.
+    assert PulseConfig().dependency_arb_min_entry_vwap == 0.0
+    # from_env with no override stays disabled.
+    monkeypatch.delenv("PULSE_DEPENDENCY_ARB_MIN_ENTRY_VWAP", raising=False)
+    assert PulseConfig.from_env().dependency_arb_min_entry_vwap == 0.0
+    # Operator sets the floor => picked up by from_env.
+    monkeypatch.setenv("PULSE_DEPENDENCY_ARB_MIN_ENTRY_VWAP", "0.50")
+    assert PulseConfig.from_env().dependency_arb_min_entry_vwap == 0.50
+
+
 def test_dep_arb_bucket_bleeding_halts_losing_bucket():
     cal = DependencyArbCalibration()
     for _ in range(5):
