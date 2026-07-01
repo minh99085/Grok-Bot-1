@@ -84,7 +84,7 @@ UPDATES = {
     "PULSE_TV_MTF_REQUIRE_ALL_CONFIRM": "0",
     "PULSE_TV_MTF_REQUIRE_SIDE_ALIGN": "0",
     # UP restrictor floors: block proven-losing UP contexts.
-    "PULSE_TV_DOWN_BIAS_GATE": "1",
+    "PULSE_TV_DOWN_BIAS_GATE": "0",
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_AGAINST_CONFIRMED_DOWN": "1",
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_RANGE_TOP": "1",
     "PULSE_TV_DOWN_BIAS_BLOCK_UP_MARKOV_CHOP_NOISE": "1",
@@ -117,7 +117,7 @@ UPDATES = {
     "PULSE_MIN_ENTRY_PRICE": "0.45",
     "PULSE_MIN_REWARD_RISK": "0.50",
     "PULSE_MIN_REWARD_RISK_UP_PREMIUM": "0.28",
-    "PULSE_GROK_UP_MIN_P_WIN": "0.58",
+    "PULSE_GROK_UP_MIN_P_WIN": "0.52",
     # Gamma windows often appear >20s after open_ts; min_seconds_since_open=30 already delays entry.
     "PULSE_MAX_OPEN_LAG_S": "120",
     "PULSE_MAX_OPEN_LAG_15M_S": "240",
@@ -254,12 +254,14 @@ UPDATES = {
     "PULSE_ARB_MAX_USD": "300",
     "PULSE_PRIMARY_EDGE_SOURCE": "arbitrage",
     "PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC": "0.10",
-    # LOCKS LIFTED (operator 2026-07-01): DOWN-only removed so the loop can explore + grade UP.
-    # BLOCK_UP_UNTIL_PROMOTED stays 1 as the loop's OWN promotion gate — UP trades only once the
-    # allowlist/selectivity learner promotes it from evidence (that IS the loop adjusting, not a freeze).
+    # Unchoke UP (operator 2026-07-01 "let bot trade"): the market currently leans UP, and every UP
+    # entry was blocked by BLOCK_UP_UNTIL_PROMOTED (rejected:up_blocked_until_promoted was the binding
+    # choke after the edge relax). Open the UP side so the council/quant can actually trade its
+    # direction; the execution-quality EV gate + calibration + selectivity learners still bound quality
+    # and GRADE UP on real outcomes (re-block via the learner if UP proves losing). Was proven-marginal.
     "PULSE_DIRECTIONAL_DOWN_ONLY": "0",
-    "PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED": "1",
-    "PULSE_DIRECTIONAL_UP_RESTRICTIONS_ENABLED": "1",
+    "PULSE_DIRECTIONAL_BLOCK_UP_UNTIL_PROMOTED": "0",
+    "PULSE_DIRECTIONAL_UP_RESTRICTIONS_ENABLED": "0",
     "PULSE_DEPENDENCY_ARB_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_EXECUTE": "1",
     "PULSE_GREEN_PATH_ENABLED": "1",
