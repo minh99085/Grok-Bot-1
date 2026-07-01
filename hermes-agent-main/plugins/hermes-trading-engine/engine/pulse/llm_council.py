@@ -143,9 +143,14 @@ class LLMCouncil:
     ``to_state``/``load_state``. PAPER ONLY."""
 
     #: default cold-start priors -- Claude has been the reliable reviewer, quant is the anchor, Grok
-    #: starts modest, TV starts low (historically negative-alpha; the council will FADE it if the
-    #: grading confirms it's anti-predictive, or FOLLOW it if it turns out predictive).
-    DEFAULT_PRIORS = {"quant": 1.0, "claude": 0.7, "grok": 0.4, "tv": 0.3}
+    #: starts modest. Any ``tv_*`` per-timeframe member starts LOW (0.3) via ``_prior`` (historically
+    #: negative-alpha; the council FADEs it if grading confirms anti-predictive, FOLLOWs if predictive).
+    DEFAULT_PRIORS = {"quant": 1.0, "claude": 0.7, "grok": 0.4}
+
+    def _prior(self, name: str) -> float:
+        if name in self.priors:
+            return self.priors[name]
+        return 0.3 if str(name).startswith("tv") else 0.5
 
     def __init__(self, *, enabled: bool = False, min_agreement: float = 0.60,
                  min_margin: float = 0.02, min_members: int = 2, min_samples: int = 20,
@@ -167,13 +172,13 @@ class LLMCouncil:
 
     def _weight_locked(self, name: str) -> float:
         s = self._stats.get(name) or {"n": 0, "correct": 0}
-        return member_weight(s["correct"], s["n"], prior=self.priors.get(name, 0.5),
+        return member_weight(s["correct"], s["n"], prior=self._prior(name),
                              floor=self.weight_floor, min_samples=self.min_samples,
                              scale=self.weight_scale)
 
     def _stance_locked(self, name: str):
         s = self._stats.get(name) or {"n": 0, "correct": 0}
-        return member_stance(s["correct"], s["n"], prior=self.priors.get(name, 0.5),
+        return member_stance(s["correct"], s["n"], prior=self._prior(name),
                              floor=self.weight_floor, min_samples=self.min_samples,
                              scale=self.weight_scale)
 
@@ -222,8 +227,10 @@ class LLMCouncil:
                 members[name] = {"n": s["n"], "accuracy": acc,
                                  "accuracy_lower_ci": (round(_wilson_lower(s["correct"], s["n"]), 4)
                                                        if s["n"] else None),
+                                 "accuracy_upper_ci": (round(_wilson_upper(s["correct"], s["n"]), 4)
+                                                       if s["n"] else None),
                                  "stance": stance, "faded": invert, "weight": round(weight, 4),
-                                 "prior": self.priors.get(name)}
+                                 "prior": self._prior(name)}
             return {
                 "enabled": self.enabled, "paper_only": True,
                 "affects_trading": self.enabled,

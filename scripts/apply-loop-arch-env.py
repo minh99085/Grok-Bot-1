@@ -41,10 +41,11 @@ UPDATES = {
     # instead of the favorite-by-probability. Takes the CHEAP underdog when it's underpriced (high
     # reward/risk, clears the price cap) and refuses to overpay for the favorite -> unchokes fills.
     "PULSE_COUNCIL_BEST_EV": "1",
-    # TV as a graded council member (2026-07-01): the council FOLLOWS/FADES/IGNORES the TV alert
-    # direction from its live accuracy. TV is historically negative-alpha (DOWN_STRONG WR ~0.17), so
-    # it will most likely be FADED (inverted) -- turning the contrarian TV signal into usable edge -
-    # -instead of blindly trusted as a gate. Self-correcting; can't hurt more than a floored member.
+    # TV per-timeframe council members (2026-07-01): EACH TradingView timeframe (tv_2m, tv_5m,
+    # tv_15m, ...) is its own graded council member; the council FOLLOWS/FADES/IGNORES each TF from
+    # its OWN live accuracy. This proves which timeframe is beneficial (data: 2m is anti-predictive
+    # -> faded; a horizon-matched 10m/15m may earn a FOLLOW). Add 10m/15m/1h charts in TradingView and
+    # they auto-join + get graded. Self-correcting; can't hurt more than a floored member.
     "PULSE_COUNCIL_TV_MEMBER": "1",
     "PULSE_CLAUDE_DECIDER_ENABLED": "1",
     # Monte Carlo: correlated dep-arb conditional P(parent UP | children UP). Deterministic numpy sim.

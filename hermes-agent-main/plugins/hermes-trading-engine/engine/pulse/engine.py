@@ -2249,14 +2249,13 @@ class PulseEngine:
                             if (grok_dec is not None and grok_dec.get("p_up") is not None) else None)
                 _council_views = {"quant": (float(fair_used) if fair_used is not None else None),
                                   "grok": _grok_pu, "claude": claude_pu}
-                # TV alert as a graded member: direction+strength -> p_up. The council FOLLOWS/FADES/
-                # IGNORES it from live accuracy (TV is historically negative-alpha -> likely faded).
-                if self.cfg.council_tv_member and tv_feature:
-                    _tvd = str(tv_feature.get("direction") or "").upper()
-                    _tvs = tv_feature.get("strength")
-                    if _tvs is not None and _tvd in ("UP", "DOWN"):
-                        _tvs = max(0.0, min(1.0, float(_tvs)))
-                        _council_views["tv"] = (0.5 + 0.5 * _tvs) if _tvd == "UP" else (0.5 - 0.5 * _tvs)
+                # Each TradingView TIMEFRAME becomes its own graded council member (tv_2m, tv_5m,
+                # tv_15m, ...). The council FOLLOWS/FADES/IGNORES each TF from its OWN live accuracy,
+                # so the per-member stance proves which timeframe is beneficial -- and any 10m/15m/1h
+                # chart the operator adds in TradingView auto-joins and gets graded.
+                if self.cfg.council_tv_member and self.tradingview is not None:
+                    for _mname, _pu in self._tv_per_tf_views(now).items():
+                        _council_views[_mname] = _pu
                 council_dec = self.llm_council.decide(_council_views)
                 dr.council = council_dec
                 self._schedule_council_grade(mc.decision_id, snap.price, w.close_ts, _council_views)
@@ -3900,6 +3899,34 @@ class PulseEngine:
             elif now <= p["close_ts"] + 600:
                 still.append(p)
         self._council_pending = still[-2000:]
+
+    def _tv_per_tf_views(self, now: float) -> dict:
+        """Per-timeframe TV directional views for the council: ``{tv_<tf>m: p_up}``, fresh alerts
+        only, freshness scaled by TF (a 15m trend stays informative longer than a 2m burst). Each TF
+        is graded independently by the council so its stance reveals which timeframe earns a FOLLOW."""
+        out: dict = {}
+        tvi = self.tradingview
+        if tvi is None:
+            return out
+        try:
+            now = float(now)
+            for (_sym, tf), pair in list(getattr(tvi, "latest_by_tf", {}) .items()):
+                try:
+                    ev, ts = pair
+                    tfn = int(str(tf))
+                except (TypeError, ValueError):
+                    continue
+                if (now - float(ts)) > max(300.0, tfn * 60.0 * 2.5):
+                    continue
+                d = str(getattr(ev, "direction", "") or "").upper()
+                s = getattr(ev, "strength", None)
+                if s is None or d not in ("UP", "DOWN"):
+                    continue
+                s = max(0.0, min(1.0, float(s)))
+                out["tv_%dm" % tfn] = (0.5 + 0.5 * s) if d == "UP" else (0.5 - 0.5 * s)
+        except Exception:  # noqa: BLE001 — never break the tick over TV parsing
+            return out
+        return out
 
     def _observe_mc_dep_arb(self, parent, child, entry_vwap: float, v, now: float):
         """Monte Carlo price of the correlated dep-arb conditional (P(parent UP | children UP)) +

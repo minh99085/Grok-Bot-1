@@ -20,6 +20,17 @@ def test_member_stance_follow_fade_ignore_cold():
     assert st == "ignore" and inv is False and w == 0.1
 
 
+def test_council_grades_each_tv_timeframe_independently():
+    c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
+    # tv_2m contrarian (says UP, market DOWN); tv_15m predictive (says DOWN, market DOWN).
+    for _ in range(30):
+        c.grade({"tv_2m": 0.8, "tv_15m": 0.2}, outcome_up=False)
+    rep = c.report()
+    assert rep["members"]["tv_2m"]["stance"] == "fade"       # short-TF anti-predictive -> faded
+    assert rep["members"]["tv_15m"]["stance"] == "follow"    # horizon-matched TF -> followed
+    assert rep["members"]["tv_2m"]["prior"] == 0.3           # any tv_* member starts low
+
+
 def test_council_fades_anti_predictive_member():
     c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
     # TV member is contrarian: says UP (p_up 0.8) but outcome is DOWN, repeatedly.
