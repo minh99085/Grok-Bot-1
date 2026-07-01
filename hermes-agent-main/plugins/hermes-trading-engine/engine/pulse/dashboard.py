@@ -252,6 +252,7 @@ function buildRows(s){
       'green');
     const mem=lc.members||{};
     Object.keys(mem).sort().forEach(k=>{
+      if(k.indexOf('tv')===0)return;          // TV members shown in their own section below
       const m=mem[k]||{};
       const st=(m.stance||'cold');
       const light=(st==='follow')?'green':(st==='fade'?'yellow':'yellow');
@@ -274,6 +275,36 @@ function buildRows(s){
     'Grok '+(gd.mode||'—')+' · Claude '+(((cd.decided||0)>0)?'live':((cd.errors||0)>0?'erroring':'idle')),
     'Grok decided '+f(gd.decided,0)+' (err '+f(gd.errors,0)+') · Claude decided '+f(cd.decided,0)+' (err '+f(cd.errors,0)+')',
     (((cd.errors||0)>10)||((gd.errors||0)>80))?'yellow':'green');
+
+  // ---- TradingView signals: each timeframe's live direction + how the council uses it ----
+  addSection(rows,'TradingView signals (per timeframe)');
+  const tvd=s.tradingview||{};
+  const bytf=tvd.tradingview_latest_by_timeframe||{};
+  const mem2=(s.llm_council||{}).members||{};
+  const tfKeys=Object.keys(bytf).sort((a,b)=>{
+    const na=parseInt((a.split('@')[1]||'0'),10), nb=parseInt((b.split('@')[1]||'0'),10);
+    return na-nb;});
+  if(tfKeys.length){
+    tfKeys.forEach(k=>{
+      const t=bytf[k]||{};
+      const tfn=(k.split('@')[1]||'?');
+      const cm=mem2['tv_'+tfn+'m']||{};
+      const st=cm.stance||'cold';
+      const dir=t.direction||'—';
+      const light=(dir==='FLAT'||dir==='—')?'yellow':(st==='follow'?'green':(st==='fade'?'yellow':'yellow'));
+      const stanceTxt=(st==='follow'?'FOLLOW':(st==='fade'?'FADE (inverted)':(st==='ignore'?'IGNORE':'learning')));
+      addRow(rows,'TV '+tfn+'m',
+        dir+(t.strength!=null?' · strength '+f(t.strength,2):'')+(t.signal_level?' ('+t.signal_level+')':''),
+        'council: '+stanceTxt+(cm.accuracy!=null?' · '+(cm.accuracy*100).toFixed(0)+'% acc (n='+f(cm.n,0)+')':' — needs '+((s.llm_council||{}).min_samples||20)+' settled'),
+        light);
+    });
+  }else{
+    addRow(rows,'TV signals','No fresh alerts landing','check TradingView chart alerts + webhook','red');
+  }
+  addRow(rows,'TV alerts landing',
+    f(tvd.tradingview_alerts_valid,0)+' valid / '+f(tvd.tradingview_alerts_received,0)+' received',
+    'rejected '+f(tvd.tradingview_alerts_rejected,0)+' · observe-only (graded, followed/faded by the council)',
+    (tvd.tradingview_alerts_valid||0)>0?'green':'red');
 
   addSection(rows,'Money — dependency arbitrage');
   addRow(rows,'Dep-arb profit/loss',usd(pnl),
