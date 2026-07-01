@@ -187,6 +187,192 @@ def mc_dependency_implication(*, s_now: float, now: float, parent: dict, childre
     return out
 
 
+def mc_should_veto(mc_result: Optional[dict], *, ev_threshold: float = -0.02) -> bool:
+    """Gate decision: veto a dep-arb entry when the MC CONDITIONAL EV (the EV that actually applies,
+    since the trade only fires when the children are UP) is clearly negative -- i.e. paying more for
+    parent-UP than its true P(parent UP | children UP). Principled (negative-EV skip), not a guess."""
+    if not mc_result or not mc_result.get("available"):
+        return False
+    ev = mc_result.get("ev_per_dollar_given_children_up")
+    return ev is not None and float(ev) < float(ev_threshold)
+
+
+class MCFlagGrader:
+    """Grades the MC adverse-selection flag vs real settled outcomes so we can measure whether the
+    flag actually predicts losses BEFORE trusting it to gate (precision/recall on 'flag => lost')."""
+
+    def __init__(self):
+        self.n = 0
+        self.flagged = 0
+        self.flagged_lost = 0            # flag said adverse AND parent-UP would have lost (true pos)
+        self.not_flagged = 0
+        self.not_flagged_won = 0          # not flagged AND parent-UP would have won (true neg)
+
+    def record(self, *, flagged: bool, would_win: bool) -> None:
+        self.n += 1
+        if flagged:
+            self.flagged += 1
+            if not would_win:
+                self.flagged_lost += 1
+        else:
+            self.not_flagged += 1
+            if would_win:
+                self.not_flagged_won += 1
+
+    def report(self) -> dict:
+        return {
+            "graded": self.n, "flagged": self.flagged,
+            "flag_precision": (round(self.flagged_lost / self.flagged, 4) if self.flagged else None),
+            "not_flagged": self.not_flagged,
+            "not_flagged_win_rate": (round(self.not_flagged_won / self.not_flagged, 4)
+                                     if self.not_flagged else None),
+            "note": "flag_precision = P(parent-UP would lose | MC flagged adverse); high => the veto "
+                    "is correctly skipping losers.",
+        }
+
+    def to_state(self) -> dict:
+        return {"n": self.n, "flagged": self.flagged, "flagged_lost": self.flagged_lost,
+                "not_flagged": self.not_flagged, "not_flagged_won": self.not_flagged_won}
+
+    def load_state(self, d: dict) -> None:
+        if not d:
+            return
+        self.n = int(d.get("n", 0) or 0)
+        self.flagged = int(d.get("flagged", 0) or 0)
+        self.flagged_lost = int(d.get("flagged_lost", 0) or 0)
+        self.not_flagged = int(d.get("not_flagged", 0) or 0)
+        self.not_flagged_won = int(d.get("not_flagged_won", 0) or 0)
+
+
+# ---- LLM-parameterized scenario (LLM = modeler; deterministic code = simulator) ---------------- #
+NEUTRAL_SCENARIO = {"sigma_mult": 1.0, "mu_per_sec": 0.0, "jump_intensity_per_sec": 0.0,
+                    "jump_sigma": 0.0, "source": "neutral"}
+
+# Tight bounds so an LLM (esp. an anti-predictive one) can shade the model, never hijack it.
+_SCENARIO_BOUNDS = {
+    "sigma_mult": (0.5, 2.0), "mu_per_sec": (-5e-6, 5e-6),
+    "jump_intensity_per_sec": (0.0, 0.05), "jump_sigma": (0.0, 0.01),
+}
+
+
+def validate_scenario_params(d, *, source: str = "llm") -> dict:
+    """Clamp an LLM's proposed MC parameters into safe bounds; fall back to neutral on bad input.
+    Keeps the LLM as a bounded *modeler* — it can tilt vol/drift/tail risk but not blow up the sim."""
+    if not isinstance(d, dict):
+        return dict(NEUTRAL_SCENARIO)
+    out = {}
+    for k, (lo, hi) in _SCENARIO_BOUNDS.items():
+        try:
+            v = float(d.get(k, NEUTRAL_SCENARIO[k]))
+        except (TypeError, ValueError):
+            v = NEUTRAL_SCENARIO[k]
+        out[k] = max(lo, min(hi, v))
+    out["source"] = str(d.get("source") or source)[:24]
+    return out
+
+
+def make_grok_scenario_fn(*, model: str = "grok-4.3", timeout_s: float = 15.0, chat=None):
+    """Build ``fn(context) -> validated scenario params | None``. Asks the LLM to shade the MC's BTC
+    return model for the next ~15 min from recent regime/news. Fail-open (None on any error)."""
+    from engine.pulse.grok_intel import _grok_chat, _parse_json
+    chat = chat if chat is not None else _grok_chat
+    box: dict = {}
+
+    def _fn(context: dict) -> Optional[dict]:
+        prompt = (
+            "You parameterize a Monte Carlo model of BTC's next ~15 minutes (base is Gaussian GBM). "
+            "From the recent regime/news context, return factors to shade the model. STRICT JSON ONLY: "
+            "{\"sigma_mult\":<0.5-2.0, vol vs realized>,\"mu_per_sec\":<-5e-6..5e-6 tiny drift>,"
+            "\"jump_intensity_per_sec\":<0-0.05>,\"jump_sigma\":<0-0.01>}. Neutral = "
+            "{sigma_mult:1,mu_per_sec:0,jump_intensity_per_sec:0,jump_sigma:0}. Only deviate on clear "
+            "evidence.\nCONTEXT: " + str(context)[:2000])
+        d = _parse_json(chat(prompt, model=model, timeout_s=timeout_s, box=box))
+        if not isinstance(d, dict):
+            return None
+        return validate_scenario_params(d, source="grok")
+    return _fn
+
+
+class MCScenarioAdvisor:
+    """Periodic LLM proposal of bounded MC scenario params, cached + fail-open to neutral. Runs on a
+    background worker; the tick reads ``latest()`` (never blocks). PAPER; observe/advisory on params
+    -- the MC still runs deterministically in code."""
+
+    def __init__(self, *, scenario_fn=None, budget=None, context_fn=None,
+                 interval_s: float = 300.0, max_age_s: float = 900.0, feature: str = "mc_scenario"):
+        import threading
+        import time as _t
+        self._t = _t
+        self._fn = scenario_fn if scenario_fn is not None else make_grok_scenario_fn()
+        self._budget = budget
+        self._context_fn = context_fn
+        self.interval_s = max(60.0, float(interval_s))
+        self.max_age_s = float(max_age_s)
+        self.feature = feature
+        self._lock = threading.Lock()
+        self._params = dict(NEUTRAL_SCENARIO)
+        self._ts = 0.0
+        self.calls = 0
+        self.errors = 0
+        self.skipped_budget = 0
+        self._stop = threading.Event()
+        self._thread = None
+        self._threading = threading
+
+    def refresh(self) -> Optional[dict]:
+        if self._budget is not None and not self._budget.try_spend(self.feature):
+            self.skipped_budget += 1
+            return None
+        ctx = {}
+        try:
+            ctx = self._context_fn() if self._context_fn else {}
+        except Exception:  # noqa: BLE001
+            ctx = {}
+        p = None
+        try:
+            p = self._fn(ctx)
+        except Exception:  # noqa: BLE001
+            p = None
+        if p is None:
+            self.errors += 1
+        else:
+            self.calls += 1
+            with self._lock:
+                self._params, self._ts = validate_scenario_params(p, source=p.get("source", "llm")), self._t.time()
+        return p
+
+    def latest(self) -> dict:
+        with self._lock:
+            if self._ts and (self._t.time() - self._ts) <= self.max_age_s:
+                return dict(self._params)
+        return dict(NEUTRAL_SCENARIO)
+
+    def _worker(self) -> None:
+        self._stop.wait(min(self.interval_s, 20.0))
+        while not self._stop.is_set():
+            try:
+                self.refresh()
+            except Exception:  # noqa: BLE001
+                pass
+            self._stop.wait(self.interval_s)
+
+    def start(self) -> "MCScenarioAdvisor":
+        if self._thread is None or not self._thread.is_alive():
+            self._stop.clear()
+            self._thread = self._threading.Thread(target=self._worker, name="mc-scenario", daemon=True)
+            self._thread.start()
+        return self
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def report(self) -> dict:
+        with self._lock:
+            return {"enabled": True, "calls": self.calls, "errors": self.errors,
+                    "skipped_budget": self.skipped_budget, "params": dict(self._params),
+                    "age_s": (round(self._t.time() - self._ts, 1) if self._ts else None)}
+
+
 def pnl_summary(prob_win: float, entry_price: float, *, size_usd: float = 1.0,
                 n_paths: int = 20000, seed: Optional[int] = None) -> dict:
     """Full P&L distribution + Kelly for a single binary payoff bought at ``entry_price``.

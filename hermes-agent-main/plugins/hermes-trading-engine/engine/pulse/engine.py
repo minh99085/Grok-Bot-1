@@ -304,9 +304,12 @@ class PulseConfig:
     claude_decider_enabled: bool = False      # Claude directional second-opinion (council member)
     claude_decider_model: str = ""
     claude_decider_timeout_s: float = 18.0
-    # ---- MONTE CARLO pricing (observe-only; correlated dep-arb conditional + fat tails) ----
+    # ---- MONTE CARLO pricing (correlated dep-arb conditional + fat tails; LLM-parameterizable) ----
     mc_enabled: bool = False
     mc_paths: int = 20000
+    mc_dep_arb_gate: bool = False             # let MC veto negative-conditional-EV dep-arb entries
+    mc_adverse_ev_threshold: float = -0.02
+    mc_scenario_llm: bool = False             # let Grok/Claude parameterize the MC (bounded)
     bregman_projection_enabled: bool = False  # WS4 Layer 2 diagnostics
     bregman_trade_authority: bool = False     # Bregman sizes Lane B when True
     bregman_alpha: float = 0.9
@@ -793,6 +796,11 @@ class PulseConfig:
             mc_enabled=str(os.getenv("PULSE_MC_ENABLED", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
             mc_paths=int(_envf("PULSE_MC_PATHS", 20000)),
+            mc_dep_arb_gate=str(os.getenv("PULSE_MC_DEP_ARB_GATE", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
+            mc_adverse_ev_threshold=_envf("PULSE_MC_ADVERSE_EV_THRESHOLD", -0.02),
+            mc_scenario_llm=str(os.getenv("PULSE_MC_SCENARIO_LLM", "0")).strip().lower()
+            in ("1", "true", "yes", "on"),
             bregman_projection_enabled=str(os.getenv("PULSE_BREGMAN_PROJECTION_ENABLED", "0"))
             .strip().lower() in ("1", "true", "yes", "on"),
             bregman_trade_authority=str(os.getenv("PULSE_BREGMAN_TRADE_AUTHORITY", "0"))
@@ -1520,6 +1528,24 @@ class PulseEngine:
             min_members=self.cfg.llm_council_min_members)
         self._council_pending: list = []
         self._mc_dep_analysis: list = []       # observe-only Monte Carlo dep-arb conditional pricing
+        self._mc_dep_pending: list = []        # pending MC-flag grades (resolved at parent close)
+        from engine.pulse.monte_carlo import MCFlagGrader
+        self._mc_grader = MCFlagGrader()
+        # LLM parameterizes the MC (bounded scenario params); Grok primary, Claude when funded.
+        # Fail-open to neutral -> MC runs on plain calibrated GBM if the LLM is unavailable.
+        self.mc_scenario_advisor = None
+        if self.cfg.mc_enabled and self.cfg.mc_scenario_llm:
+            try:
+                from engine.pulse.grok_intel import xai_key
+                from engine.pulse.monte_carlo import MCScenarioAdvisor, make_grok_scenario_fn
+                if xai_key():
+                    self.mc_scenario_advisor = MCScenarioAdvisor(
+                        scenario_fn=make_grok_scenario_fn(model=self.cfg.grok_decider_model),
+                        budget=self.grok_budget,
+                        context_fn=lambda: {"recent_windows": self._recent_windows_view(6)},
+                        interval_s=self.cfg.grok_news_refresh_s).start()
+            except Exception:  # noqa: BLE001 — advisor never blocks startup
+                self.mc_scenario_advisor = None
         # OBSERVE-ONLY TradingView indicator webhook intake (enabled only when a secret is set).
         # Alerts become candidate signals only; they can never place/resize/bypass a paper trade.
         self.tradingview = None
@@ -1772,6 +1798,8 @@ class PulseEngine:
         if self.llm_council is not None:
             self.llm_council.load_state(acct.get("llm_council") or {})
         self._council_pending = list(acct.get("council_pending") or [])
+        self._mc_grader.load_state(acct.get("mc_flag_grading") or {})
+        self._mc_dep_pending = list(acct.get("mc_dep_pending") or [])
         if self.grok_dep_convergence is not None:
             self.grok_dep_convergence.load_state(acct.get("grok_dep_convergence") or {})
             self._obs_completed_n = int(acct.get("grok_dep_obs_completed_n") or 0)
@@ -1892,6 +1920,7 @@ class PulseEngine:
                         tv_feature = {**feat, "grok_p_up": gp.get("p_up")}
         self._grade_grok_decisions(now)   # grade prior Grok decisions vs realized window close
         self._grade_council_decisions(now)  # grade prior LLM-council member views vs realized close
+        self._grade_mc_dep(now)             # grade the MC adverse-selection flag vs realized close
         self._grade_verifier_decisions(now)  # counterfactual grade for vetoed (and shadow) setups
         self._grade_dep_arb_verifier_decisions(now)  # dep-arb verifier veto counterfactuals
         self._grade_cex_lead(now)         # grade prior CEX-lead signals vs realized window close
@@ -3833,19 +3862,19 @@ class PulseEngine:
                 still.append(p)
         self._council_pending = still[-2000:]
 
-    def _observe_mc_dep_arb(self, parent, child, entry_vwap: float, v, now: float) -> None:
-        """OBSERVE-ONLY: Monte Carlo price of the correlated dep-arb conditional (P(parent UP | child
-        UP)) + adverse-selection flag. Never affects the trade; fully wrapped so it can't break the
-        scan. This is the evidence layer: does MC catch the cheap-parent-UP adverse selection that the
-        nested heuristic missed?"""
+    def _observe_mc_dep_arb(self, parent, child, entry_vwap: float, v, now: float):
+        """Monte Carlo price of the correlated dep-arb conditional (P(parent UP | children UP)) +
+        adverse-selection flag, using LLM-parameterized scenario params. Returns the MC dict (or None)
+        so the caller can gate; also records observe + a grading snapshot. Fully wrapped so it can
+        never break the scan."""
         try:
             from engine.pulse import monte_carlo as mc
             if not mc.HAVE_NUMPY:
-                return
+                return None
             s_now = self.price.current()
             sigma = self.price.sigma_per_sec(now)
             if s_now is None or not sigma or float(sigma) <= 0:
-                return
+                return None
 
             def _open_px(win):
                 snap = self.price.open_snapshot(getattr(win, "event_id", None))
@@ -3854,27 +3883,60 @@ class PulseEngine:
                     px = float(snap)
                 return px
 
+            p_open = _open_px(parent)
             parent_d = {"open_ts": float(parent.open_ts), "close_ts": float(parent.close_ts),
-                        "s_open": _open_px(parent)}
+                        "s_open": p_open}
             child_d = {"open_ts": float(child.open_ts), "close_ts": float(child.close_ts),
                        "s_open": _open_px(child)}
+            sc = (self.mc_scenario_advisor.latest()
+                  if self.mc_scenario_advisor is not None else mc.NEUTRAL_SCENARIO)
             res = mc.mc_dependency_implication(
                 s_now=float(s_now), now=float(now), parent=parent_d, children=[child_d],
-                sigma_per_sec=float(sigma), entry_vwap=float(entry_vwap),
-                n_paths=int(self.cfg.mc_paths))
-            if res.get("available"):
-                self._mc_dep_analysis.append({
-                    "ts": round(float(now), 1),
-                    "parent": str(v.parent_window_key),
-                    "child": str((v.child_window_keys or [None])[0]),
-                    "entry_vwap": round(float(entry_vwap), 4),
-                    "constraint_type": getattr(v, "constraint_type", None),
-                    **{k: res.get(k) for k in (
-                        "p_parent_up", "p_parent_up_given_children_up", "implication_lift",
-                        "ev_per_dollar_given_children_up", "adverse_selection")}})
-                self._mc_dep_analysis = self._mc_dep_analysis[-30:]
+                sigma_per_sec=float(sigma) * float(sc.get("sigma_mult", 1.0)),
+                mu_per_sec=float(sc.get("mu_per_sec", 0.0)),
+                entry_vwap=float(entry_vwap), n_paths=int(self.cfg.mc_paths),
+                jump_intensity_per_sec=float(sc.get("jump_intensity_per_sec", 0.0)),
+                jump_sigma=float(sc.get("jump_sigma", 0.0)))
+            if not res.get("available"):
+                return None
+            flagged = bool(mc.mc_should_veto(res, ev_threshold=self.cfg.mc_adverse_ev_threshold))
+            self._mc_dep_analysis.append({
+                "ts": round(float(now), 1),
+                "parent": str(v.parent_window_key),
+                "child": str((v.child_window_keys or [None])[0]),
+                "entry_vwap": round(float(entry_vwap), 4),
+                "constraint_type": getattr(v, "constraint_type", None),
+                "scenario": sc.get("source"), "flagged": flagged,
+                **{k: res.get(k) for k in (
+                    "p_parent_up", "p_parent_up_given_children_up", "implication_lift",
+                    "ev_per_dollar_given_children_up", "adverse_selection")}})
+            self._mc_dep_analysis = self._mc_dep_analysis[-30:]
+            # grading snapshot: at parent close, did buying parent-UP win? was it flagged?
+            if p_open is not None:
+                self._mc_dep_pending.append({"close_ts": float(parent.close_ts),
+                                             "price0": float(p_open), "flagged": flagged})
+                self._mc_dep_pending = self._mc_dep_pending[-2000:]
+            return res
         except Exception:  # noqa: BLE001 — observe-only; never break the scan
-            pass
+            return None
+
+    def _grade_mc_dep(self, now: float) -> None:
+        """At parent close, grade the MC adverse-selection flag vs the real outcome (did buying
+        parent-UP win?) so we can measure flag precision before trusting the gate. Restart-safe."""
+        if not self._mc_dep_pending:
+            return
+        px = self.price.current()
+        still = []
+        for p in self._mc_dep_pending:
+            if now < p["close_ts"]:
+                still.append(p)
+                continue
+            if px is not None:
+                would_win = float(px) >= float(p["price0"])  # parent-UP wins if close >= open
+                self._mc_grader.record(flagged=bool(p.get("flagged")), would_win=would_win)
+            elif now <= p["close_ts"] + 600:
+                still.append(p)
+        self._mc_dep_pending = still[-2000:]
 
     def _schedule_cex_lead_grade(self, decision_id: str, price0, close_ts: float,
                                  sig: dict) -> None:
@@ -5064,9 +5126,20 @@ class PulseEngine:
                 max_entry = float(self.cfg.dependency_arb_max_entry_vwap)
                 min_entry = float(self.cfg.dependency_arb_min_entry_vwap)
                 entry_vwap = float(trade.get("entry_vwap") or 0)
-                if self.cfg.mc_enabled:
-                    self._observe_mc_dep_arb(parent, child, entry_vwap, v, now)
-                if entry_vwap > max_entry + 1e-9:
+                mc_res = (self._observe_mc_dep_arb(parent, child, entry_vwap, v, now)
+                          if self.cfg.mc_enabled else None)
+                mc_veto = False
+                if self.cfg.mc_dep_arb_gate and mc_res is not None:
+                    from engine.pulse.monte_carlo import mc_should_veto
+                    mc_veto = mc_should_veto(mc_res, ev_threshold=self.cfg.mc_adverse_ev_threshold)
+                if mc_veto:
+                    # Monte Carlo says the true P(parent UP | children UP) is below the price paid ->
+                    # negative conditional EV -> skip the adverse-selection fill (paper).
+                    self.dep_arb_ledger.rejected_by_reason["mc_adverse_selection"] = (
+                        int(self.dep_arb_ledger.rejected_by_reason.get(
+                            "mc_adverse_selection", 0) or 0) + 1)
+                    trade = None
+                elif entry_vwap > max_entry + 1e-9:
                     self.dep_arb_ledger.rejected_by_reason["entry_vwap_above_cap"] = (
                         int(self.dep_arb_ledger.rejected_by_reason.get(
                             "entry_vwap_above_cap", 0) or 0) + 1)
@@ -5565,9 +5638,15 @@ class PulseEngine:
             "claude_decider": (self.claude_decider.report() if self.claude_decider is not None
                                else {"enabled": False}),
             "monte_carlo": {"enabled": bool(self.cfg.mc_enabled), "paths": int(self.cfg.mc_paths),
-                            "observe_only": True, "affects_trading": False,
+                            "dep_arb_gate": bool(self.cfg.mc_dep_arb_gate),
+                            "affects_trading": bool(self.cfg.mc_dep_arb_gate),
+                            "adverse_ev_threshold": float(self.cfg.mc_adverse_ev_threshold),
                             "note": ("correlated dep-arb conditional P(parent UP | children UP) + "
-                                     "adverse-selection flag; deterministic numpy MC, LLM-parameterizable"),
+                                     "adverse-selection gate; deterministic numpy MC, LLM-parameterized"),
+                            "flag_grading": self._mc_grader.report(),
+                            "scenario": (self.mc_scenario_advisor.report()
+                                         if self.mc_scenario_advisor is not None
+                                         else {"enabled": False, "params": None}),
                             "recent": self._mc_dep_analysis[-10:]},
             "verifier": (self.verifier.report() if self.verifier is not None else {"enabled": False}),
             "research_loop": (self.research_loop.report() if self.research_loop is not None
@@ -5676,6 +5755,8 @@ class PulseEngine:
                               "llm_council": (self.llm_council.to_state()
                                               if self.llm_council is not None else {}),
                               "council_pending": self._council_pending[-2000:],
+                              "mc_flag_grading": self._mc_grader.to_state(),
+                              "mc_dep_pending": self._mc_dep_pending[-2000:],
                               "grok_news": (self.grok_news.to_state()
                                             if self.grok_news is not None else {}),
                               "grok_dep_convergence": (

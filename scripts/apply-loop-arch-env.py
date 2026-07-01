@@ -35,10 +35,17 @@ UPDATES = {
     "PULSE_LLM_COUNCIL_MIN_MARGIN": "0.02",
     "PULSE_LLM_COUNCIL_MIN_MEMBERS": "2",
     "PULSE_CLAUDE_DECIDER_ENABLED": "1",
-    # Monte Carlo (observe-only): correlated dep-arb conditional P(parent UP | children UP) +
-    # adverse-selection flag. Deterministic numpy sim (LLM-parameterizable); does NOT affect trades.
+    # Monte Carlo: correlated dep-arb conditional P(parent UP | children UP). Deterministic numpy sim.
+    # GATE ON (operator 2026-07-01 "do it"): MC vetoes dep-arb entries whose conditional EV is clearly
+    # negative (paying more than the true conditional prob = adverse selection — the -$406 failure
+    # mode). The flag is graded vs real outcomes (status.monte_carlo.flag_grading) so its precision is
+    # measured. LLM (Grok now, Claude when funded) parameterizes the MC's vol/drift/jumps (bounded,
+    # fail-open to neutral GBM).
     "PULSE_MC_ENABLED": "1",
     "PULSE_MC_PATHS": "20000",
+    "PULSE_MC_DEP_ARB_GATE": "1",
+    "PULSE_MC_ADVERSE_EV_THRESHOLD": "-0.02",
+    "PULSE_MC_SCENARIO_LLM": "1",
     "PULSE_GROK_DECIDER_MIN_CONFIDENCE": "0.62",
     "PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN": "0.08",
     # Trinity profile: fast 15s tick (arb) + tiered Grok (profit/API/soak balance).

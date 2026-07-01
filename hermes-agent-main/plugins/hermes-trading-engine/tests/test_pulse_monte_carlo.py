@@ -7,6 +7,7 @@ import pytest
 from engine.pulse.monte_carlo import (
     HAVE_NUMPY, closed_form_digital_p_up, mc_digital_p_up,
     simulate_prices_at_times, mc_dependency_implication, pnl_summary,
+    mc_should_veto, MCFlagGrader, validate_scenario_params, NEUTRAL_SCENARIO,
 )
 
 pytestmark = pytest.mark.skipif(not HAVE_NUMPY, reason="numpy required for MC")
@@ -78,3 +79,42 @@ def test_pnl_summary_kelly_and_loss_prob():
     assert s["expected_pnl_usd"] > 0
     neg = pnl_summary(0.4, 0.5, n_paths=40000, seed=9)
     assert neg["kelly_fraction"] == 0.0       # -EV -> no bet
+
+
+def test_mc_should_veto_only_on_negative_conditional_ev():
+    assert mc_should_veto(None) is False
+    assert mc_should_veto({"available": False}) is False
+    assert mc_should_veto({"available": True, "ev_per_dollar_given_children_up": 0.05}) is False
+    assert mc_should_veto({"available": True, "ev_per_dollar_given_children_up": -0.16}) is True
+    # near-zero negative below threshold magnitude -> no veto (avoids noise)
+    assert mc_should_veto({"available": True, "ev_per_dollar_given_children_up": -0.01},
+                          ev_threshold=-0.02) is False
+
+
+def test_mc_flag_grader_precision():
+    g = MCFlagGrader()
+    # flagged trades that would have lost (correct vetoes) + one flagged that would have won
+    for _ in range(8):
+        g.record(flagged=True, would_win=False)
+    g.record(flagged=True, would_win=True)
+    for _ in range(5):
+        g.record(flagged=False, would_win=True)
+    rep = g.report()
+    assert rep["graded"] == 14 and rep["flagged"] == 9
+    assert rep["flag_precision"] == round(8 / 9, 4)     # 8/9 flagged trades would have lost
+    assert rep["not_flagged_win_rate"] == 1.0
+    g2 = MCFlagGrader()
+    g2.load_state(g.to_state())
+    assert g2.report()["flag_precision"] == rep["flag_precision"]
+
+
+def test_validate_scenario_params_clamps_and_defaults():
+    assert validate_scenario_params("garbage") == NEUTRAL_SCENARIO or \
+        validate_scenario_params("garbage")["sigma_mult"] == 1.0
+    p = validate_scenario_params({"sigma_mult": 9.0, "mu_per_sec": 1.0,
+                                  "jump_intensity_per_sec": 99, "jump_sigma": 5, "source": "grok"})
+    assert p["sigma_mult"] == 2.0             # clamped to max
+    assert p["mu_per_sec"] == 5e-6            # clamped to max
+    assert p["jump_intensity_per_sec"] == 0.05
+    assert p["jump_sigma"] == 0.01
+    assert p["source"] == "grok"
