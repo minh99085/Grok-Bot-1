@@ -21,7 +21,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 logger = logging.getLogger("hte.pulse.tradingview")
 
@@ -890,8 +890,13 @@ class TradingViewIntake:
                  confirm_windows_by_tf: Optional[dict[str, float]] = None,
                  confirm_window_s: float = 360.0,
                  confirm_window_10m_s: float = 660.0,
-                 confirm_window_15m_s: float = 960.0):
+                 confirm_window_15m_s: float = 960.0,
+                 drop_timeframes: Optional[Iterable] = None):
         self.secret = str(secret or "")
+        # Chart timeframes the operator retired: never tracked per-TF (no council member, no dashboard
+        # row, stripped from persisted snapshots). Alerts still accepted/counted (observe-only).
+        self.drop_timeframes = frozenset(
+            str(t).strip() for t in (drop_timeframes or ()) if str(t).strip())
         # Chart symbol the operator feeds (INDEX:BTCUSD -> BTCUSD). Used for 5m/10m/15m
         # cross-confirmation lookups — distinct from the Chainlink oracle slug (btc/usd).
         self.feature_symbol = normalize_symbol(feature_symbol) or "BTCUSD"
@@ -984,9 +989,10 @@ class TradingViewIntake:
             prev = merged_tf.get(key)
             if prev is None or float(pair[1]) >= float(prev[1]):
                 merged_tf[key] = pair
+        _drop = LEGACY_MTF_TFS | self.drop_timeframes
         self.latest_by_tf = {
             k: v for k, v in merged_tf.items()
-            if str(k[1]) not in LEGACY_MTF_TFS
+            if str(k[1]) not in _drop
         }
 
         if self.latest is not None:
@@ -1167,7 +1173,9 @@ class TradingViewIntake:
             self.latest = ev
             store_sym = self._storage_symbol(ev.symbol)
             self.latest_by_symbol[store_sym] = ev
-            self.latest_by_tf[(store_sym, str(ev.timeframe or "?"))] = (ev, float(now))
+            _tf_key = str(ev.timeframe or "?")
+            if _tf_key not in self.drop_timeframes:   # retired TFs: accept but don't track per-TF
+                self.latest_by_tf[(store_sym, _tf_key)] = (ev, float(now))
             self.valid_by_symbol[store_sym] = self.valid_by_symbol.get(store_sym, 0) + 1
             self._pending.append(ev)
             self._persist_locked()
@@ -1428,7 +1436,8 @@ class TradingViewIntake:
             ev = _event_from_dict(row.get("ev"))
             if ev is not None:
                 self.latest_by_tf[(row.get("symbol"), str(row.get("tf")))] = (ev, float(row.get("ts") or 0.0))
-        had_legacy_tf = any(str(k[1]) in LEGACY_MTF_TFS for k in self.latest_by_tf)
+        had_legacy_tf = any(
+            str(k[1]) in (LEGACY_MTF_TFS | self.drop_timeframes) for k in self.latest_by_tf)
         had_unsup = UNSUPPORTED_SYMBOL in self.reject_reasons
         self._canonicalize_storage()
         scrubbed = self._scrub_legacy_reject_stats()

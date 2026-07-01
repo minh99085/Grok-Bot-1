@@ -208,6 +208,31 @@ def test_active_tf_kept_and_unsupported_rejects_scrubbed(tmp_path):
     assert intake.rejected == 2
 
 
+def test_drop_timeframes_not_tracked_but_still_accepted(tmp_path):
+    intake = _intake(tmp_path, drop_timeframes=("2", "3", "4"))
+    now = 1_000_000.0
+    for i, tf in enumerate(("2", "4", "5", "15")):
+        code, body = intake.ingest(_alert(timeframe=tf, event_id="e-%s" % tf), now=now + i)
+        assert code == 200 and body.get("ok") is True   # accepted (observe-only)
+    tfs = {k[1] for k in intake.latest_by_tf}
+    # retired short TFs are NOT tracked per-TF; horizon TFs are
+    assert "2" not in tfs and "4" not in tfs
+    assert "5" in tfs and "15" in tfs
+    # alerts still counted as valid even though 2/4 are not tracked per-TF
+    assert intake.valid == 4
+
+
+def test_drop_timeframes_stripped_from_persisted_snapshot(tmp_path):
+    intake = _intake(tmp_path, drop_timeframes=("3",))
+    now = 1_000_000.0
+    intake.ingest(_alert(timeframe="5", event_id="k5"), now=now)
+    # simulate a legacy persisted entry for a now-dropped TF, then canonicalize (load path)
+    intake.latest_by_tf[("BTCUSD", "3")] = intake.latest_by_tf[("BTCUSD", "5")]
+    intake._canonicalize_storage()
+    tfs = {k[1] for k in intake.latest_by_tf}
+    assert "3" not in tfs and "5" in tfs
+
+
 def test_btc_exchange_prefix_symbols_accepted():
     intake = _intake()
     for sym in ("BITSTAMP:BTCUSD", "COINBASE:BTCUSD", "BTC/USD"):

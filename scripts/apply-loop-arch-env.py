@@ -41,11 +41,11 @@ UPDATES = {
     # instead of the favorite-by-probability. Takes the CHEAP underdog when it's underpriced (high
     # reward/risk, clears the price cap) and refuses to overpay for the favorite -> unchokes fills.
     "PULSE_COUNCIL_BEST_EV": "1",
-    # TV per-timeframe council members (2026-07-01): EACH TradingView timeframe (tv_2m, tv_5m,
-    # tv_15m, ...) is its own graded council member; the council FOLLOWS/FADES/IGNORES each TF from
-    # its OWN live accuracy. This proves which timeframe is beneficial (data: 2m is anti-predictive
-    # -> faded; a horizon-matched 10m/15m may earn a FOLLOW). Add 10m/15m/1h charts in TradingView and
-    # they auto-join + get graded. Self-correcting; can't hurt more than a floored member.
+    # TV per-timeframe council members (2026-07-01): EACH TradingView timeframe (tv_5m, tv_10m,
+    # tv_15m, tv_60m, ...) is its own graded council member; the council FOLLOWS/FADES/IGNORES each TF
+    # from its OWN live accuracy. The short 2m/3m/4m TFs were retired (anti-predictive; see
+    # PULSE_TV_DROP_TIMEFRAMES) — the bot now runs the horizon-matched 5m/10m/15m/1h set. Add charts in
+    # TradingView and they auto-join + get graded. Self-correcting; can't hurt more than a floored member.
     "PULSE_COUNCIL_TV_MEMBER": "1",
     "PULSE_CLAUDE_DECIDER_ENABLED": "1",
     # Monte Carlo: correlated dep-arb conditional P(parent UP | children UP). Deterministic numpy sim.
@@ -327,8 +327,12 @@ UPDATES = {
     "PULSE_TV_FEATURE_SYMBOL": "BTCUSD",
     "TRADINGVIEW_ALLOWED_SYMBOLS": "BTCUSD,INDEX:BTCUSD,BTC/USD,BTC,XBTUSD",
     "TRADINGVIEW_MAX_AGE_S": "180",
-    "PULSE_TV_MTF_TIMEFRAMES": "2,3,4",
-    # ~2.5 bar lengths per TF (2m=300s, 3m=450s, 4m=600s).
+    # Operator 2026-07-01 "remove TV 2m 3m 4m": retire the short, anti-predictive TFs and consolidate
+    # on the horizon-matched set. Drop 2/3/4 -> not tracked per-TF (no council member, no dashboard row,
+    # stripped from persisted snapshots). MTF confirmation now runs on 5/10/15.
+    "PULSE_TV_DROP_TIMEFRAMES": "2,3,4",
+    "PULSE_TV_MTF_TIMEFRAMES": "5,10,15",
+    # ~2.5 bar lengths per TF (5m=750s, 10m=1500s, 15m=2250s); kept for any 2/3/4 that still arrive.
     "PULSE_TV_MTF_CONFIRM_WINDOW_2M_S": "300",
     "PULSE_TV_MTF_CONFIRM_WINDOW_3M_S": "450",
     "PULSE_TV_MTF_CONFIRM_WINDOW_4M_S": "600",

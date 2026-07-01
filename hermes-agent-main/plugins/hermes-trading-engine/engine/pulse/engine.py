@@ -50,6 +50,20 @@ def _parse_tv_mtf_timeframes(raw) -> tuple[str, ...]:
     return parse_mtf_timeframes(raw)
 
 
+def _parse_tv_drop_timeframes(raw) -> tuple[str, ...]:
+    """Parse ``PULSE_TV_DROP_TIMEFRAMES`` (retired chart TFs). Empty -> drop nothing (unlike the MTF
+    parser, which falls back to a default set)."""
+    from engine.pulse.tradingview import normalize_timeframe
+    if raw is None or not str(raw).strip():
+        return ()
+    out: list[str] = []
+    for part in str(raw).split(","):
+        tf = normalize_timeframe(part.strip())
+        if tf and tf not in out:
+            out.append(tf)
+    return tuple(out)
+
+
 def _tv_mtf_confirm_windows(cfg: "PulseConfig") -> dict[str, float]:
     from engine.pulse.tradingview import build_mtf_confirm_windows
     return build_mtf_confirm_windows(
@@ -452,6 +466,7 @@ class PulseConfig:
     tradingview_max_age_s: float = 90.0
     tradingview_feature_symbol: str = "BTCUSD"   # TV INDEX:BTCUSD — 5m/10m/15m MTF
     tradingview_mtf_timeframes: tuple = ("2", "3", "4")
+    tradingview_drop_timeframes: tuple = ()      # retired chart TFs: not tracked per-TF (no council/dash)
     tradingview_mtf_confirm_window_s: float = 360.0
     tradingview_mtf_confirm_window_10m_s: float = 660.0
     tradingview_mtf_confirm_window_15m_s: float = 960.0
@@ -1043,6 +1058,8 @@ class PulseConfig:
                 os.getenv("PULSE_TV_FEATURE_SYMBOL", "BTCUSD") or "BTCUSD") or "BTCUSD",
             tradingview_mtf_timeframes=_parse_tv_mtf_timeframes(
                 os.getenv("PULSE_TV_MTF_TIMEFRAMES", "2,3,4")),
+            tradingview_drop_timeframes=_parse_tv_drop_timeframes(
+                os.getenv("PULSE_TV_DROP_TIMEFRAMES", "")),
             tradingview_mtf_confirm_window_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_S", 360.0),
             tradingview_mtf_confirm_window_10m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_10M_S", 660.0),
             tradingview_mtf_confirm_window_15m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_15M_S", 960.0),
@@ -1571,7 +1588,8 @@ class PulseEngine:
                     confirm_windows_by_tf=_tv_mtf_confirm_windows(self.cfg),
                     confirm_window_s=self.cfg.tradingview_mtf_confirm_window_s,
                     confirm_window_10m_s=self.cfg.tradingview_mtf_confirm_window_10m_s,
-                    confirm_window_15m_s=self.cfg.tradingview_mtf_confirm_window_15m_s)
+                    confirm_window_15m_s=self.cfg.tradingview_mtf_confirm_window_15m_s,
+                    drop_timeframes=self.cfg.tradingview_drop_timeframes)
                 self.webhook = WebhookServer(
                     self.tradingview, host=self.cfg.tradingview_webhook_host,
                     port=self.cfg.tradingview_webhook_port,
