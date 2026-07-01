@@ -31,8 +31,11 @@ UPDATES = {
     "PULSE_GROK_DECIDER_EXPLORE_RATE": "0.05",
     # Both LLMs' compute drives the decision: Grok member + Claude second-opinion member + quant.
     "PULSE_LLM_COUNCIL_ENABLED": "1",
-    "PULSE_LLM_COUNCIL_MIN_AGREEMENT": "0.60",
-    "PULSE_LLM_COUNCIL_MIN_MARGIN": "0.02",
+    # Relaxed (2026-07-01) so the council drives more windows through the follow path (bypassing the
+    # baseline edge_below_min choke): 0.55 lets the higher-weight member (quant) lead consensus even
+    # when Grok disagrees (Claude is blocked -> only 2 members), 0.01 trades smaller consensus tilts.
+    "PULSE_LLM_COUNCIL_MIN_AGREEMENT": "0.55",
+    "PULSE_LLM_COUNCIL_MIN_MARGIN": "0.01",
     "PULSE_LLM_COUNCIL_MIN_MEMBERS": "2",
     "PULSE_CLAUDE_DECIDER_ENABLED": "1",
     # Monte Carlo: correlated dep-arb conditional P(parent UP | children UP). Deterministic numpy sim.
@@ -104,8 +107,12 @@ UPDATES = {
     # Baseline quant path: allowlist was deadlocking (no proven bucket + 0% explore).
     "PULSE_DIRECTIONAL_REQUIRE_WINNING": "0",
     "PULSE_DIRECTIONAL_EXPLORE_RATE": "0.05",   # WS2: cold-start DOWN exploration (was 0, deadlocked)
-    "PULSE_MIN_EDGE": "0.008",
-    "PULSE_BASIS_BUFFER": "0.008",
+    # Let the bot trade (operator 2026-07-01 "find what chokes trading, tweak to let it trade"):
+    # edge_below_min was the #1 directional reject (~6k). Halve the after-cost edge threshold + basis
+    # buffer so more 15m windows clear. The execution-quality EV gate + calibration + selectivity
+    # learners still bound quality (graded on outcomes; re-tighten if WR craters). Trades thinner edge.
+    "PULSE_MIN_EDGE": "0.004",
+    "PULSE_BASIS_BUFFER": "0.004",
     # Strategy: sweet-spot only (0.47-0.55) entry band.
     "PULSE_MIN_ENTRY_PRICE": "0.45",
     "PULSE_MIN_REWARD_RISK": "0.50",
