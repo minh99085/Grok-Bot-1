@@ -268,22 +268,25 @@ def test_tv_freshness_cap_drops_stale_offgrid_read(tmp_path):
 def test_btc_correlated_exposure_sums_directional_and_dep_arb(tmp_path):
     import types
     eng = _mini_engine(tmp_path, correlated_exposure_cap_usd=20.0)
-    # directional: one open UP ($6), one open DOWN ($5), one settled UP (ignored)
+    now = 1_000_000.0
+    live, stale = now + 600, now - 600   # window closes in the future vs already closed
+    # directional: open UP live ($6), open DOWN live ($5), settled UP (ignored), open-but-STALE UP ($9)
     eng.ledger.positions = {
-        "u1": types.SimpleNamespace(status="open", side="up", size_usd=6.0),
-        "d1": types.SimpleNamespace(status="open", side="down", size_usd=5.0),
-        "u2": types.SimpleNamespace(status="settled", side="up", size_usd=9.0),
+        "u1": types.SimpleNamespace(status="open", side="up", size_usd=6.0, close_ts=live),
+        "d1": types.SimpleNamespace(status="open", side="down", size_usd=5.0, close_ts=live),
+        "u2": types.SimpleNamespace(status="settled", side="up", size_usd=9.0, close_ts=live),
+        "u3": types.SimpleNamespace(status="open", side="up", size_usd=9.0, close_ts=stale),
     }
-    up_only_dir = eng._btc_correlated_exposure("up")
-    assert up_only_dir == 6.0                      # only the open UP directional
-    assert eng._btc_correlated_exposure("down") == 5.0
+    assert eng._btc_correlated_exposure("up", now) == 6.0    # only the live open UP (stale u3 excluded)
+    assert eng._btc_correlated_exposure("down", now) == 5.0
     if eng.dep_arb_ledger is not None:             # dep-arb parent-UP adds to BTC-up exposure
         eng.dep_arb_ledger.positions = {
-            "p1": {"status": "open", "cost_usd": 5.0},
-            "p2": {"status": "settled", "cost_usd": 50.0},   # ignored
+            "p1": {"status": "open", "cost_usd": 5.0, "close_ts": live},
+            "p2": {"status": "settled", "cost_usd": 50.0, "close_ts": live},   # ignored (settled)
+            "p3": {"status": "open", "cost_usd": 50.0, "close_ts": stale},     # ignored (stuck/stale)
         }
-        assert eng._btc_correlated_exposure("up") == 11.0    # 6 directional + 5 dep-arb
-        assert eng._btc_correlated_exposure("down") == 5.0   # dep-arb never adds to DOWN
+        assert eng._btc_correlated_exposure("up", now) == 11.0   # 6 directional + 5 live dep-arb
+        assert eng._btc_correlated_exposure("down", now) == 5.0  # dep-arb never adds to DOWN
 
 
 def test_engine_status_exposes_council(tmp_path):

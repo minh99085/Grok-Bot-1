@@ -5378,21 +5378,29 @@ class PulseEngine:
                 exp += float(getattr(pos, "size_usd", 0.0) or 0.0)
         return exp
 
-    def _btc_correlated_exposure(self, side, now: float = 0.0) -> float:
-        """Same-direction BTC exposure currently OPEN across lanes -- so the lanes don't stack the
-        same directional bet. For a directional ``side``: sum open directional positions on that side
-        PLUS, for UP, all open dep-arb parent-UP positions (nested implication = long BTC-up). The
-        dutch-book lane is risk-free (hedged) so it never counts. Read-only; only ever BLOCKS a new
-        entry, never forces one."""
+    def _btc_correlated_exposure(self, side, now: Optional[float] = None) -> float:
+        """Same-direction BTC exposure on still-LIVE windows across lanes -- so the lanes don't stack
+        the same directional bet. For a directional ``side``: sum open directional positions on that
+        side PLUS, for UP, all open dep-arb parent-UP positions (nested implication = long BTC-up). The
+        dutch-book lane is risk-free (hedged) so it never counts.
+
+        Only counts positions whose window has NOT closed yet (``close_ts > now``): a position past its
+        close is resolving/awaiting-settlement -- its window already determined its outcome, so it is
+        no longer forward exposure to a NEW window's move (and a stuck/unsettled position must not
+        permanently pin the cap). Read-only; only ever BLOCKS a new entry, never forces one."""
+        import time as _time
+        now = float(now) if now else _time.time()
         side = str(side or "").lower()
         exp = 0.0
         for pos in self.ledger.positions.values():
             if getattr(pos, "status", None) == "open" \
-                    and str(getattr(pos, "side", "")).lower() == side:
+                    and str(getattr(pos, "side", "")).lower() == side \
+                    and float(getattr(pos, "close_ts", 0.0) or 0.0) > now:
                 exp += float(getattr(pos, "size_usd", 0.0) or 0.0)
         if side == "up" and self.dep_arb_ledger is not None:
             for p in self.dep_arb_ledger.positions.values():
-                if isinstance(p, dict) and p.get("status") == "open":
+                if isinstance(p, dict) and p.get("status") == "open" \
+                        and float(p.get("close_ts") or 0.0) > now:
                     exp += float(p.get("cost_usd") or 0.0)
         return round(exp, 6)
 
