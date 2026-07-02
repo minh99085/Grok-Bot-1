@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from engine.pulse.reporting import (spread_bucket, depth_bucket, confidence_tier,
                                      OutcomeGroups, promotion_demotion, build_light_report,
-                                     build_report_sections, build_full_report_md)
+                                     build_report_sections, build_full_report_md,
+                                     ledger_stats_by_entry_price)
 from engine.pulse.markets import OrderBook, PulseWindow
 from engine.pulse.price import PulsePriceFeed
 from engine.pulse.fair_value import RollingVol
@@ -16,6 +17,26 @@ def test_buckets():
     assert depth_bucket(10) == "<50" and depth_bucket(5000) == ">=1000"
     assert confidence_tier(0.1) == "low" and confidence_tier(0.9) == "high"
     assert spread_bucket(None) == "na" and confidence_tier(None) == "na"
+
+
+def test_ledger_stats_by_entry_price_flb_edge():
+    # favorite band resolves better than implied (+edge); longshot worse (-edge)
+    positions = {
+        "a": {"status": "settled", "entry_price": 0.62, "won": True, "pnl_usd": 0.38},
+        "b": {"status": "settled", "entry_price": 0.64, "won": True, "pnl_usd": 0.36},
+        "c": {"status": "settled", "entry_price": 0.66, "won": False, "pnl_usd": -0.66},
+        "d": {"status": "settled", "entry_price": 0.12, "won": False, "pnl_usd": -0.12},
+        "e": {"status": "settled", "entry_price": 0.14, "won": False, "pnl_usd": -0.14},
+        "f": {"status": "open", "entry_price": 0.60},          # ignored (not settled)
+    }
+    out = ledger_stats_by_entry_price(positions)
+    fav = out["0.60-0.70"]
+    assert fav["n"] == 3 and fav["wins"] == 2 and fav["losses"] == 1
+    assert fav["win_rate"] == round(2 / 3, 4)
+    assert fav["edge"] > 0                                     # realized (0.667) > implied (~0.64)
+    short = out["<0.35"]
+    assert short["n"] == 2 and short["win_rate"] == 0.0 and short["edge"] < 0
+    assert "0.45-0.50" not in out                              # no trades there -> omitted
 
 
 def test_outcome_groups_multi_dimension():

@@ -53,23 +53,27 @@ def _wilson_upper(correct: int, n: int, z: float = 1.64) -> Optional[float]:
 
 
 def member_stance(correct: int, n: int, *, prior: float, floor: float = 0.1,
-                  min_samples: int = 20, scale: float = 8.0):
+                  min_samples: int = 20, scale: float = 8.0,
+                  fade_min_samples: Optional[int] = None):
     """FOLLOW / FADE / IGNORE / COLD decision for one member from its graded accuracy.
 
     * COLD   (n < min_samples): trust the prior, use the view as-is.
     * FOLLOW (Wilson lower > 0.5): proven predictive -> weight up, use the view as-is.
-    * FADE   (Wilson upper < 0.5): proven anti-predictive -> weight by how-wrong, and INVERT the view
-      (this is how the council exploits a contrarian signal like TV's strong alerts).
-    * IGNORE (spans 0.5): uncertain -> collapse to the floor, use the view as-is.
+    * FADE   (Wilson upper < 0.5 AND n >= fade_min_samples): proven anti-predictive -> weight by
+      how-wrong, and INVERT the view. Fading needs MORE evidence than following (inverting a signal
+      on a small-sample fluke is the "forecast-combination puzzle" noise trap), so fade_min_samples
+      defaults higher than min_samples.
+    * IGNORE (spans 0.5, or anti-predictive but not yet enough samples to fade): floor, view as-is.
 
     Returns ``(stance, weight, invert)``."""
     if n < int(min_samples):
         return "cold", max(float(floor), float(prior)), False
+    fade_n = int(fade_min_samples) if fade_min_samples is not None else int(min_samples)
     lo = _wilson_lower(correct, n)
     up = _wilson_upper(correct, n)
     if lo is not None and lo > 0.5:
         return "follow", round(float(floor) + (lo - 0.5) * float(scale), 6), False
-    if up is not None and up < 0.5:
+    if up is not None and up < 0.5 and n >= fade_n:
         return "fade", round(float(floor) + (0.5 - up) * float(scale), 6), True
     return "ignore", float(floor), False
 
@@ -142,20 +146,23 @@ class LLMCouncil:
     per-window consensus, and grades members vs realized outcomes. Thread-safe; restart-safe via
     ``to_state``/``load_state``. PAPER ONLY."""
 
-    #: default cold-start priors -- Claude has been the reliable reviewer, quant is the anchor, Grok
-    #: starts modest. Any ``tv_*`` per-timeframe member starts LOW (0.3) via ``_prior`` (historically
-    #: negative-alpha; the council FADEs it if grading confirms anti-predictive, FOLLOWs if predictive).
-    DEFAULT_PRIORS = {"quant": 1.0, "claude": 0.7, "grok": 0.4}
+    #: cold-start priors. ONLY the quant anchor carries real cold weight (it is the deterministic,
+    #: calibrated fair value). Every other member (LLMs, TV) must EARN weight from graded accuracy --
+    #: until then it sits at the floor and its view is shrunk toward neutral, so an ungraded member
+    #: can never swing the vote on an arbitrary prior. (Forecast-combination puzzle: don't trust
+    #: estimated/assumed weights you can't back with out-of-sample evidence.)
+    DEFAULT_PRIORS = {"quant": 1.0}
 
     def _prior(self, name: str) -> float:
         if name in self.priors:
             return self.priors[name]
-        return 0.3 if str(name).startswith("tv") else 0.5
+        return float(self.weight_floor)
 
     def __init__(self, *, enabled: bool = False, min_agreement: float = 0.60,
                  min_margin: float = 0.02, min_members: int = 2, min_samples: int = 20,
                  weight_floor: float = 0.1, weight_scale: float = 8.0,
-                 priors: Optional[dict] = None):
+                 priors: Optional[dict] = None, anchor: str = "quant",
+                 fade_min_samples: Optional[int] = None):
         self.enabled = bool(enabled)
         self.min_agreement = float(min_agreement)
         self.min_margin = float(min_margin)
@@ -164,12 +171,20 @@ class LLMCouncil:
         self.weight_floor = float(weight_floor)
         self.weight_scale = float(weight_scale)
         self.priors = dict(priors or self.DEFAULT_PRIORS)
+        self.anchor = str(anchor)
+        # fading (inverting a member) needs more evidence than following -- guards the small-sample
+        # noise trap; defaults to max(min_samples, 30).
+        self.fade_min_samples = int(fade_min_samples) if fade_min_samples is not None \
+            else max(int(min_samples), 30)
         self._lock = threading.Lock()
         self._stats: dict = {}          # name -> {"n","correct"}
         self.ignore_members: set = set()  # retired members: never vote, grade, or report
         self.decisions = 0              # consensus dicts produced with trade=True
         self.evaluations = 0           # decide() calls
         self.graded = 0
+
+    def _is_cold(self, name: str) -> bool:
+        return int((self._stats.get(name) or {}).get("n", 0) or 0) < self.min_samples
 
     def forget(self, names) -> None:
         """Retire members (e.g. TFs the operator removed): drop their graded stats and ignore any
@@ -183,15 +198,22 @@ class LLMCouncil:
 
     def _weight_locked(self, name: str) -> float:
         s = self._stats.get(name) or {"n": 0, "correct": 0}
+        # unproven (cold) non-anchor members get the floor, NOT their prior -- they must earn weight
+        if s["n"] < self.min_samples and name != self.anchor:
+            return self.weight_floor
         return member_weight(s["correct"], s["n"], prior=self._prior(name),
                              floor=self.weight_floor, min_samples=self.min_samples,
                              scale=self.weight_scale)
 
     def _stance_locked(self, name: str):
         s = self._stats.get(name) or {"n": 0, "correct": 0}
-        return member_stance(s["correct"], s["n"], prior=self._prior(name),
-                             floor=self.weight_floor, min_samples=self.min_samples,
-                             scale=self.weight_scale)
+        stance, weight, invert = member_stance(
+            s["correct"], s["n"], prior=self._prior(name), floor=self.weight_floor,
+            min_samples=self.min_samples, scale=self.weight_scale,
+            fade_min_samples=self.fade_min_samples)
+        if s["n"] < self.min_samples and name != self.anchor:
+            weight = self.weight_floor      # cold non-anchor: floor weight (view is also shrunk)
+        return stance, weight, invert
 
     def decide(self, views: dict) -> dict:
         """``views``: ``{member_name: p_up_or_None}``. Each member's view is FOLLOWED, FADED (inverted),
@@ -205,6 +227,12 @@ class LLMCouncil:
                     continue
                 stance, weight, invert = self._stance_locked(n)
                 eff = (1.0 - float(p)) if invert else float(p)
+                # shrink an unproven non-anchor member's view toward neutral (0.5) proportional to how
+                # little it has been graded, so a cold member can't swing the vote on a raw guess.
+                sn = int((self._stats.get(n) or {}).get("n", 0) or 0)
+                if sn < self.min_samples and n != self.anchor:
+                    k = sn / float(self.min_samples) if self.min_samples else 0.0
+                    eff = 0.5 + (eff - 0.5) * k
                 votes.append({"name": n, "p_up": eff, "weight": weight})
                 stances[n] = {"stance": stance, "weight": round(weight, 4),
                               "raw_p_up": round(float(p), 4), "effective_p_up": round(eff, 4)}

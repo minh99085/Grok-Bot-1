@@ -2271,16 +2271,23 @@ class PulseEngine:
                             if (grok_dec is not None and grok_dec.get("p_up") is not None) else None)
                 _council_views = {"quant": (float(fair_used) if fair_used is not None else None),
                                   "grok": _grok_pu, "claude": claude_pu}
-                # Each TradingView TIMEFRAME becomes its own graded council member (tv_2m, tv_5m,
-                # tv_15m, ...). The council FOLLOWS/FADES/IGNORES each TF from its OWN live accuracy,
-                # so the per-member stance proves which timeframe is beneficial -- and any 10m/15m/1h
-                # chart the operator adds in TradingView auto-joins and gets graded.
+                # TradingView: the 4 alerts (5m/10m/15m/1h) are combined into ONE multi-timeframe
+                # AGREEMENT signal (tv_mtf) that VOTES -- confident when the timeframes agree, neutral
+                # when they split. Combining correlated trend alerts into a single robust view (rather
+                # than 4 separately-weighted noisy votes) is what the forecast-combination literature
+                # recommends at small samples. The per-TF signals are still recorded + graded
+                # (dashboard/measurement) so we can see which timeframe earns its keep, but they do NOT
+                # multiply the council's TV weight.
+                _grade_views = dict(_council_views)
                 if self.cfg.council_tv_member and self.tradingview is not None:
-                    for _mname, _pu in self._tv_per_tf_views(now).items():
-                        _council_views[_mname] = _pu
+                    _grade_views.update(self._tv_per_tf_views(now))   # per-TF: graded/observed only
+                    _mtf = self._tv_mtf_view(now)
+                    if _mtf is not None:
+                        _council_views["tv_mtf"] = _mtf               # the single TV voter
+                        _grade_views["tv_mtf"] = _mtf
                 council_dec = self.llm_council.decide(_council_views)
                 dr.council = council_dec
-                self._schedule_council_grade(mc.decision_id, snap.price, w.close_ts, _council_views)
+                self._schedule_council_grade(mc.decision_id, snap.price, w.close_ts, _grade_views)
                 _cp = council_dec.get("consensus_p_up")
                 _side_c = None
                 if (self.cfg.council_best_ev and _cp is not None
@@ -3951,6 +3958,24 @@ class PulseEngine:
         except Exception:  # noqa: BLE001 — never break the tick over TV parsing
             return out
         return out
+
+    def _tv_mtf_view(self, now: float) -> Optional[float]:
+        """Single multi-timeframe AGREEMENT view (p_up in [0,1]) combining the fresh per-TF TV alerts:
+        the agreement-weighted blend of their directional leans. Confident when the timeframes point
+        the same way, pulled toward neutral (0.5) when they split. Robustly combines several correlated
+        trend alerts into ONE council voter. Returns None if no fresh directional TF alert."""
+        try:
+            per_tf = self._tv_per_tf_views(now)
+            leans = [float(v) - 0.5 for v in per_tf.values() if v is not None]
+            if not leans:
+                return None
+            avg = sum(leans) / len(leans)
+            disp = sum(abs(x) for x in leans) / len(leans)
+            agree = (abs(avg) / disp) if disp > 0 else 0.0   # 1=unanimous, 0=fully split
+            comp = avg * agree                               # split timeframes -> pulled to neutral
+            return max(0.0, min(1.0, 0.5 + comp))
+        except Exception:  # noqa: BLE001 — never break the tick over TV parsing
+            return None
 
     def _observe_mc_dep_arb(self, parent, child, entry_vwap: float, v, now: float):
         """Monte Carlo price of the correlated dep-arb conditional (P(parent UP | children UP)) +
@@ -5668,7 +5693,8 @@ class PulseEngine:
         return tier_report(dims, reconciled=reconciled, safety_ok=reconciled)
 
     def status(self) -> dict:
-        from engine.pulse.reporting import ledger_stats_by_market_series
+        from engine.pulse.reporting import (ledger_stats_by_market_series,
+                                            ledger_stats_by_entry_price)
         return {
             "schema": "btc_pulse/1.1", "paper_only": True, "live_trading_enabled": False,
             "ts": self.last_tick_ts, "ticks": self.ticks,
@@ -5787,6 +5813,7 @@ class PulseEngine:
                 "explore_rate": self.cfg.directional_explore_rate,
                 "explored": self._allowlist_explored, "blocked": self._allowlist_blocked},
             "by_market_series": ledger_stats_by_market_series(self.ledger.positions),
+            "directional_by_entry_price": ledger_stats_by_entry_price(self.ledger.positions),
             "markets_feed": (self.market.report() if hasattr(self.market, "report")
                              else {"multi_series": False}),
             "pulse_series_slugs": list(self.cfg.pulse_series_slugs),

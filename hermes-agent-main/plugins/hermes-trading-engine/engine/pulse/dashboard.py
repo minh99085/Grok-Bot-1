@@ -305,11 +305,35 @@ function buildRows(s){
     'Grok decided '+f(gd.decided,0)+' (err '+f(gd.errors,0)+') · Claude decided '+f(cd.decided,0)+' (err '+f(cd.errors,0)+')',
     (((cd.errors||0)>10)||((gd.errors||0)>80))?'yellow':'green');
 
+  // ---- Win rate by entry price: favorite-longshot-bias check + favorite-band experiment measurement ----
+  addSection(rows,'Directional · win rate by entry price (favorite-longshot check)');
+  const bep=s.directional_by_entry_price||{};
+  const bepOrder=['<0.35','0.35-0.45','0.45-0.50','0.50-0.55','0.55-0.60','0.60-0.70','0.70-0.80','0.80+'];
+  let anyBep=false;
+  bepOrder.forEach(k=>{
+    const b=bep[k]; if(!b)return; anyBep=true;
+    const e=b.edge;
+    const light=((b.n||0)<5)?'yellow':(e>0?'green':(e<-0.03?'red':'yellow'));
+    addRow(rows,'Entry '+k,
+      (b.win_rate*100).toFixed(0)+'% won vs '+(b.implied*100).toFixed(0)+'% implied ('+(e>=0?'+':'')+(e*100).toFixed(0)+'pp)',
+      f(b.n,0)+' trades · '+f(b.wins,0)+'W/'+f(b.losses,0)+'L · P&amp;L '+usd(b.pnl_usd),
+      light);
+  });
+  if(!anyBep)addRow(rows,'Entry price buckets','No settled directional trades yet',
+    'realized win rate vs implied (price) appears here as trades settle','yellow');
+
   // ---- TradingView signals: each timeframe's live direction + how the council uses it ----
   addSection(rows,'TradingView signals (per timeframe)');
   const tvd=s.tradingview||{};
   const bytf=tvd.tradingview_latest_by_timeframe||{};
   const mem2=(s.llm_council||{}).members||{};
+  const mtf=mem2['tv_mtf'];
+  if(mtf){
+    addRow(rows,'TV multi-timeframe (the voter)',
+      (mtf.stance||'cold').toUpperCase()+(mtf.accuracy!=null?' · '+(mtf.accuracy*100).toFixed(0)+'% acc (n='+f(mtf.n,0)+')':' (learning)'),
+      'agreement-weighted blend of the 4 alerts — this is the TV signal that actually votes',
+      mtf.stance==='follow'?'green':(mtf.stance==='fade'?'yellow':'yellow'));
+  }
   const tfKeys=Object.keys(bytf).sort((a,b)=>{
     const na=parseInt((a.split('@')[1]||'0'),10), nb=parseInt((b.split('@')[1]||'0'),10);
     return na-nb;});

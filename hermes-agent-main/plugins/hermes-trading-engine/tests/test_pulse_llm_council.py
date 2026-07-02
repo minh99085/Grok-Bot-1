@@ -28,7 +28,7 @@ def test_council_grades_each_tv_timeframe_independently():
     rep = c.report()
     assert rep["members"]["tv_2m"]["stance"] == "fade"       # short-TF anti-predictive -> faded
     assert rep["members"]["tv_15m"]["stance"] == "follow"    # horizon-matched TF -> followed
-    assert rep["members"]["tv_2m"]["prior"] == 0.3           # any tv_* member starts low
+    assert rep["members"]["tv_2m"]["prior"] == 0.1           # non-anchor members start at the floor
 
 
 def test_council_forget_retires_members_and_blocks_repopulation():
@@ -153,6 +153,30 @@ def test_council_follows_proven_member_and_fades_anti_predictive_one():
     assert out["stances"]["grok"]["effective_p_up"] < 0.5          # grok's UP view was inverted
 
 
+def test_cold_member_cannot_swing_vote_and_quant_anchors():
+    # A cold, ungraded member (e.g. an absent Claude or a fresh TV TF) with a confident view must NOT
+    # move the consensus -- it sits at the floor and its view is shrunk toward neutral. Only the quant
+    # anchor carries cold weight, so the council falls back to the quant baseline.
+    c = LLMCouncil(enabled=True, min_members=2, min_margin=0.02, min_samples=20)
+    out = c.decide({"quant": 0.44, "claude": 0.99})   # claude screams UP but is ungraded
+    st = out["stances"]
+    assert st["claude"]["weight"] == 0.1              # cold non-anchor -> floor weight
+    assert st["claude"]["effective_p_up"] == 0.5      # cold view fully shrunk to neutral (n=0)
+    assert st["quant"]["weight"] == 1.0               # anchor keeps its cold weight
+    assert out["side"] == "down"                      # consensus follows the quant anchor (0.44), not claude
+
+
+def test_fade_needs_more_evidence_than_follow():
+    # anti-predictive at n=25 is NOT yet faded (fade_min_samples defaults to 30) -> ignore; at n=35 it fades.
+    c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
+    for _ in range(25):
+        c.grade({"grok": 0.9}, outcome_up=False)
+    assert c.report()["members"]["grok"]["stance"] == "ignore"   # anti-predictive but under fade bar
+    for _ in range(10):
+        c.grade({"grok": 0.9}, outcome_up=False)
+    assert c.report()["members"]["grok"]["stance"] == "fade"     # now n=35 >= 30 -> fade
+
+
 def test_council_fail_open_when_no_views():
     c = LLMCouncil(enabled=True, min_members=2)
     out = c.decide({"grok": None, "claude": None, "quant": None})
@@ -178,6 +202,34 @@ def test_from_env_reads_council_flags(monkeypatch):
     assert c.llm_council_enabled is True
     assert c.llm_council_min_agreement == 0.7
     assert c.claude_decider_enabled is True
+
+
+def test_tv_mtf_view_combines_timeframes_by_agreement(tmp_path):
+    from engine.pulse.engine import PulseEngine, PulseConfig
+    from engine.pulse.price import PulsePriceFeed
+    from engine.pulse.fair_value import RollingVol
+
+    class _Mkt:
+        def active_windows(self, now=None, **kw):
+            return []
+
+        def hydrate_books(self, w):
+            return w
+
+    feed = PulsePriceFeed(fetcher=lambda: 64000.0, source_name="rtds_chainlink",
+                          vol=RollingVol(window_s=900, min_samples=2), max_open_lag_s=9999.0)
+    cfg = PulseConfig(tick_seconds=1.0, data_dir=str(tmp_path), tradingview_webhook_port=0,
+                      llm_council_enabled=True)
+    eng = PulseEngine(cfg, market_feed=_Mkt(), price_feed=feed)
+    # unanimous UP across timeframes -> confident UP composite
+    eng._tv_per_tf_views = lambda now: {"tv_5m": 0.85, "tv_10m": 0.85, "tv_15m": 0.85}
+    assert eng._tv_mtf_view(0.0) > 0.8
+    # fully split -> pulled to neutral
+    eng._tv_per_tf_views = lambda now: {"tv_5m": 0.85, "tv_10m": 0.15}
+    assert abs(eng._tv_mtf_view(0.0) - 0.5) < 1e-6
+    # no fresh alerts -> None (no TV vote)
+    eng._tv_per_tf_views = lambda now: {}
+    assert eng._tv_mtf_view(0.0) is None
 
 
 def test_engine_status_exposes_council(tmp_path):

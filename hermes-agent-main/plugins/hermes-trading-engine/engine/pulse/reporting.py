@@ -138,6 +138,44 @@ def ledger_stats_by_market_series(positions: dict) -> dict:
     return out
 
 
+def ledger_stats_by_entry_price(positions: dict) -> dict:
+    """Realized win rate vs IMPLIED (entry price) per price bucket -- the favorite-longshot-bias check.
+    ``edge = realized_wr - implied`` > 0 means the band resolves in our favor more than we paid for
+    (favorites underpriced); < 0 means overpaid (longshots). Powers the dashboard FLB panel + the
+    favorite-band experiment measurement."""
+    edges = [0.0, 0.35, 0.45, 0.50, 0.55, 0.60, 0.70, 0.80, 1.01]
+    names = ["<0.35", "0.35-0.45", "0.45-0.50", "0.50-0.55",
+             "0.55-0.60", "0.60-0.70", "0.70-0.80", "0.80+"]
+    rows = {n: {"n": 0, "wins": 0, "psum": 0.0, "pnl": 0.0} for n in names}
+    for pos in (positions or {}).values():
+        if _pos_field(pos, "status") != "settled":
+            continue
+        px = _pos_field(pos, "entry_price")
+        if px is None:
+            continue
+        px = float(px)
+        won = bool(_pos_field(pos, "won"))
+        pnl = float(_pos_field(pos, "pnl_usd") or 0.0)
+        for i in range(len(edges) - 1):
+            if edges[i] <= px < edges[i + 1]:
+                r = rows[names[i]]
+                r["n"] += 1
+                r["wins"] += int(won)
+                r["psum"] += px
+                r["pnl"] = round(r["pnl"] + pnl, 4)
+                break
+    out = {}
+    for name, r in rows.items():
+        if r["n"] == 0:
+            continue
+        implied = r["psum"] / r["n"]
+        wr = r["wins"] / r["n"]
+        out[name] = {"n": r["n"], "wins": r["wins"], "losses": r["n"] - r["wins"],
+                     "implied": round(implied, 4), "win_rate": round(wr, 4),
+                     "edge": round(wr - implied, 4), "pnl_usd": r["pnl"]}
+    return out
+
+
 def promotion_demotion(tier_table: dict) -> dict:
     """From the report-only tier table, list promotion (A+/A) and demotion (C/D) candidates."""
     table = (tier_table or {}).get("table", {})
