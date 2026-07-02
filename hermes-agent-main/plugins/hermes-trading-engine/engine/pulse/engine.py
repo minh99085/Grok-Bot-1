@@ -471,6 +471,7 @@ class PulseConfig:
     tradingview_feature_symbol: str = "BTCUSD"   # TV INDEX:BTCUSD — 5m/10m/15m MTF
     tradingview_mtf_timeframes: tuple = ("2", "3", "4")
     tradingview_drop_timeframes: tuple = ()      # retired chart TFs: not tracked per-TF (no council/dash)
+    tradingview_allowed_bot_names: tuple = ()    # bot_name allow-list for TV alerts (default {bot_name})
     tradingview_mtf_confirm_window_s: float = 360.0
     tradingview_mtf_confirm_window_10m_s: float = 660.0
     tradingview_mtf_confirm_window_15m_s: float = 960.0
@@ -1070,6 +1071,9 @@ class PulseConfig:
                 os.getenv("PULSE_TV_MTF_TIMEFRAMES", "2,3,4")),
             tradingview_drop_timeframes=_parse_tv_drop_timeframes(
                 os.getenv("PULSE_TV_DROP_TIMEFRAMES", "")),
+            tradingview_allowed_bot_names=tuple(
+                s.strip() for s in (os.getenv("PULSE_TV_ALLOWED_BOT_NAMES", "") or "").split(",")
+                if s.strip()),
             tradingview_mtf_confirm_window_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_S", 360.0),
             tradingview_mtf_confirm_window_10m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_10M_S", 660.0),
             tradingview_mtf_confirm_window_15m_s=_envf("PULSE_TV_MTF_CONFIRM_WINDOW_15M_S", 960.0),
@@ -1603,7 +1607,8 @@ class PulseEngine:
                     confirm_window_s=self.cfg.tradingview_mtf_confirm_window_s,
                     confirm_window_10m_s=self.cfg.tradingview_mtf_confirm_window_10m_s,
                     confirm_window_15m_s=self.cfg.tradingview_mtf_confirm_window_15m_s,
-                    drop_timeframes=self.cfg.tradingview_drop_timeframes)
+                    drop_timeframes=self.cfg.tradingview_drop_timeframes,
+                    allowed_bot_names=(self.cfg.tradingview_allowed_bot_names or None))
                 self.webhook = WebhookServer(
                     self.tradingview, host=self.cfg.tradingview_webhook_host,
                     port=self.cfg.tradingview_webhook_port,

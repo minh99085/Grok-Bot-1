@@ -208,6 +208,17 @@ def test_active_tf_kept_and_unsupported_rejects_scrubbed(tmp_path):
     assert intake.rejected == 2
 
 
+def test_bot_name_allow_list_accepts_multiple(tmp_path):
+    intake = _intake(tmp_path, allowed_bot_names=["hermes", "grokbot5m"])
+    now = 1_000_000.0
+    code, body = intake.ingest(_alert(bot_name="grokbot5m", event_id="e-alt"), now=now)
+    assert code == 200 and body.get("ok") is True          # allow-listed alt bot name accepted
+    code2, body2 = intake.ingest(_alert(bot_name="hermes", event_id="e-h"), now=now + 1)
+    assert code2 == 200 and body2.get("ok") is True         # default still accepted
+    code3, body3 = intake.ingest(_alert(bot_name="someoneelse", event_id="e-x"), now=now + 2)
+    assert code3 != 200 and body3.get("reason") == WRONG_BOT  # not on the list -> rejected
+
+
 def test_drop_timeframes_not_tracked_but_still_accepted(tmp_path):
     intake = _intake(tmp_path, drop_timeframes=("2", "3", "4"))
     now = 1_000_000.0

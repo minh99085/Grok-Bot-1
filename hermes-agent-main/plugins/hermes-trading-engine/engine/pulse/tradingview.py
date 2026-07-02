@@ -891,7 +891,8 @@ class TradingViewIntake:
                  confirm_window_s: float = 360.0,
                  confirm_window_10m_s: float = 660.0,
                  confirm_window_15m_s: float = 960.0,
-                 drop_timeframes: Optional[Iterable] = None):
+                 drop_timeframes: Optional[Iterable] = None,
+                 allowed_bot_names: Optional[Iterable] = None):
         self.secret = str(secret or "")
         # Chart timeframes the operator retired: never tracked per-TF (no council member, no dashboard
         # row, stripped from persisted snapshots). Alerts still accepted/counted (observe-only).
@@ -911,6 +912,11 @@ class TradingViewIntake:
         # exchange-prefixed aliases (INDEX:BTCUSD) match their base symbol.
         self.allowed_symbols = {normalize_symbol(s) for s in (allowed_symbols or []) if str(s).strip()}
         self.bot_name = str(bot_name or "").strip().lower()
+        # bot-name allow-list: accept alerts whose bot_name is in this set (defaults to {bot_name}).
+        # Lets the operator route an alert configured with a different bot_name to this bot.
+        self.allowed_bot_names = {str(b).strip().lower()
+                                  for b in (allowed_bot_names or [self.bot_name])
+                                  if str(b).strip()}
         self.expected_event_id_suffix = str(expected_event_id_suffix or "").strip().lower()
         self.max_age_s = float(max_age_s)
         self.future_skew_s = float(future_skew_s)
@@ -1049,9 +1055,11 @@ class TradingViewIntake:
         sec = self._check_secret(payload, provided_header)
         if sec is not None:
             return None, sec
-        # 2) bot name filter
+        # 2) bot name filter (allow-list; e.g. accept "hermes" + any operator-added names)
         bot = str(payload.get("bot_name") or payload.get("bot") or "").strip()
-        if self.bot_name and bot.lower() != self.bot_name:
+        if self.allowed_bot_names and bot.lower() not in self.allowed_bot_names:
+            logger.info("tradingview alert REJECTED wrong_bot_name: got=%r allowed=%s",
+                        bot, sorted(self.allowed_bot_names))
             return None, WRONG_BOT
         # 3) symbol allow-list (exchange-prefix tolerant; BTC index family auto-maps)
         symbol = normalize_symbol(payload.get("symbol") or payload.get("ticker"))
