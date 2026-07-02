@@ -353,7 +353,7 @@ function buildRows(s){
       const stanceTxt=(st==='follow'?'FOLLOW':(st==='fade'?'FADE (inverted)':(st==='ignore'?'IGNORE':'learning')));
       addRow(rows,'TV '+tfn+'m',
         (stale?'STALE — not voting · ':'')+dir+(t.strength!=null?' · strength '+f(t.strength,2):'')+(t.signal_level?' ('+t.signal_level+')':''),
-        (stale?('last seen '+fmtAge(age)+' ago · '):'')+'council: '+stanceTxt+(cm.accuracy!=null?' · '+(cm.accuracy*100).toFixed(0)+'% acc (n='+f(cm.n,0)+')':' — needs '+((s.llm_council||{}).min_samples||20)+' settled'),
+        (stale?('last seen '+fmtAge(age)+' · '):'')+'council: '+stanceTxt+(cm.accuracy!=null?' · '+(cm.accuracy*100).toFixed(0)+'% acc (n='+f(cm.n,0)+')':' — needs '+((s.llm_council||{}).min_samples||20)+' settled'),
         light);
     });
   }else{
