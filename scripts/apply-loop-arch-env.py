@@ -31,11 +31,13 @@ UPDATES = {
     "PULSE_GROK_DECIDER_EXPLORE_RATE": "0.05",
     # Both LLMs' compute drives the decision: Grok member + Claude second-opinion member + quant.
     "PULSE_LLM_COUNCIL_ENABLED": "1",
-    # Relaxed (2026-07-01) so the council drives more windows through the follow path (bypassing the
-    # baseline edge_below_min choke): 0.55 lets the higher-weight member (quant) lead consensus even
-    # when Grok disagrees (Claude is blocked -> only 2 members), 0.01 trades smaller consensus tilts.
-    "PULSE_LLM_COUNCIL_MIN_AGREEMENT": "0.55",
-    "PULSE_LLM_COUNCIL_MIN_MARGIN": "0.01",
+    # CONVICTION BAR (2026-07-02): directional was a coin flip (50.9% WR, edge~0) because the council
+    # traded 774/934 windows at min_margin 0.01 -- essentially no conviction required. Raise the bar so
+    # it only trades high-conviction consensus (fewer trades, higher WR). Pairs with the cold-member
+    # fix (unproven members no longer swing the vote), so a real margin now means the graded members
+    # actually agree. 0.62 agreement + 0.05 margin (=P>=0.55 or <=0.45).
+    "PULSE_LLM_COUNCIL_MIN_AGREEMENT": "0.62",
+    "PULSE_LLM_COUNCIL_MIN_MARGIN": "0.05",
     "PULSE_LLM_COUNCIL_MIN_MEMBERS": "2",
     # Best-EV side selection (2026-07-01 "do it"): the council picks the side with max (P(side)-ask)
     # instead of the favorite-by-probability. Takes the CHEAP underdog when it's underpriced (high
@@ -57,7 +59,11 @@ UPDATES = {
     "PULSE_MC_ENABLED": "1",
     "PULSE_MC_PATHS": "20000",
     "PULSE_MC_DEP_ARB_GATE": "1",
-    "PULSE_MC_ADVERSE_EV_THRESHOLD": "-0.02",
+    # Tightened -0.02 -> 0.0 (2026-07-02): dep-arb payoff is asymmetric (avg win ~$24 vs avg loss ~$48
+    # -> breakeven WR ~66.7%), so "not badly adverse" (-0.02) isn't enough. Require NON-NEGATIVE
+    # conditional EV to enter, pushing selection toward the high-WR band that clears breakeven. (New-
+    # regime dep-arb trades post-gates are already 9/9 winners; this keeps the bar there.)
+    "PULSE_MC_ADVERSE_EV_THRESHOLD": "0.0",
     "PULSE_MC_SCENARIO_LLM": "1",
     "PULSE_GROK_DECIDER_MIN_CONFIDENCE": "0.62",
     "PULSE_GROK_DECIDER_EXPLORE_MIN_VIEW_MARGIN": "0.08",
@@ -140,11 +146,14 @@ UPDATES = {
     "PULSE_STOP_MIN_SAMPLES": "60",
     # Sweet-spot entry (1M MC sim): base 160-220s → 15m TTC 480-660s (minutes 8-11).
     "PULSE_TICK_SECONDS": "15",
-    # Widened 0.55->0.65 (2026-07-01 "let bot trade"): an UP-leaning market prices UP contracts above
-    # 0.55, so grok_max_price was the binding choke on council UP trades. Let the execution-quality EV
-    # gate (needs consensus p_up > price) + reward/risk (0.50 -> caps ~0.667) be the real arbiters
-    # rather than a flat price cap. Beyond this, entries are gated only by honest +EV, which stays.
-    "PULSE_MAX_PRICE": "0.65",
+    # Widened 0.65->0.72 (2026-07-02) as a CAPPED favorite-band experiment: the favorite-longshot-bias
+    # literature says favorites (0.60-0.85) resolve MORE often than their price implies (Leo Labs: 0.60-
+    # 0.70 -> ~80% realized). We have only ~4 trades there, so this is UNVERIFIED for our BTC markets ->
+    # it stays an experiment, not a strategy flip. Raising the cap only ENABLES best-EV to take a
+    # favorite when it judges it underpriced (needs consensus p_up > price + reward/risk), which is rare
+    # since quant is ~calibrated -> naturally self-capping. Per-price-bucket realized-vs-implied WR is
+    # tracked on the dashboard so we measure whether the favorite band actually pays here.
+    "PULSE_MAX_PRICE": "0.72",
     # [TV-LOCK] context gate off — TV never blocks entries.
     "PULSE_TV_CONTEXT_GATE": "0",
     # TV confidence tier: modulate min_edge/max_price at 15m sweet spot (not a trade gate).
