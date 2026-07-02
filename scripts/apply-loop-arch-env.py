@@ -227,7 +227,9 @@ UPDATES = {
     "PULSE_ARB_EPSILON": "0.0005",
     "PULSE_ARB_EPSILON_5M": "0.0005",
     "PULSE_ARB_EPSILON_15M": "0.0005",
-    "PULSE_DEPENDENCY_ARB_EPSILON": "0.03",
+    # Lowered 0.03 -> 0.025 (2026-07-02): admit slightly thinner LCMM violations for more volume; the
+    # MC +EV gate + entry floor still filter adverse selection.
+    "PULSE_DEPENDENCY_ARB_EPSILON": "0.025",
     # WS3-B: Fréchet conjunction floor — the only dep-arb path that may EXECUTE. It is true
     # risk-free arb (all nested children UP => parent UP), so it stays ON.
     "PULSE_DEPENDENCY_ARB_CONJUNCTION": "1",
@@ -251,7 +253,12 @@ UPDATES = {
     "PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY": "1",
     "PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S": "60",
-    "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.52",
+    # Widened 0.52 -> 0.70 (2026-07-02 "loosen dep-arb for volume"): ledger by entry_vwap showed the
+    # 0.60-0.70 band was a WINNER (83% WR, +$79) but the 0.52 cap cut it off. Open it up for volume; the
+    # min floor (0.50) still blocks the toxic <0.50 longshots and the MC +EV gate (threshold 0.0) filters
+    # the mid-band adverse-selection. New-regime dep-arb is 9/9 wins, so the gates are holding. MONITOR:
+    # if the 0.55-0.60 middle drags P&L negative, tighten back.
+    "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.70",
     # A1 edge fix (2026-07-01, ledger evidence n=128): cheap parent-UP entries are
     # adverse-selection. Ledger by entry_vwap: <0.50 nested lost -$440; floor at 0.50
     # flips the nested lane -$410 -> +$38 (WR 0.59->0.72, keeps 82/118) while the
