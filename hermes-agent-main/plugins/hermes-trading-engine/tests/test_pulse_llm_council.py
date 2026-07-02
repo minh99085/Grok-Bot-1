@@ -49,6 +49,36 @@ def test_council_forget_retires_members_and_blocks_repopulation():
     assert "tv_2m" not in (out.get("stances") or {})
 
 
+def test_reset_members_clears_stats_but_keeps_gradeable():
+    c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
+    for _ in range(30):
+        c.grade({"tv_5m": 0.8}, outcome_up=True)
+    assert c.report()["members"]["tv_5m"]["n"] == 30
+    assert c.reset_members(["tv_5m"]) == 1
+    assert "tv_5m" not in c.report()["members"]        # stats cleared
+    c.grade({"tv_5m": 0.8}, outcome_up=True)            # still gradeable -> re-accumulates fresh
+    assert c.report()["members"]["tv_5m"]["n"] == 1
+
+
+def test_maybe_reset_is_one_time_per_token():
+    c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
+    for _ in range(10):
+        c.grade({"tv_5m": 0.8, "tv_3m": 0.2}, outcome_up=True)
+    assert c.maybe_reset("v1", ["tv_5m"]) is True          # first apply
+    assert "tv_5m" not in c.report()["members"]
+    assert "tv_3m" in c.report()["members"]                # untouched
+    for _ in range(5):
+        c.grade({"tv_5m": 0.8}, outcome_up=True)
+    assert c.maybe_reset("v1", ["tv_5m"]) is False         # same token -> no re-reset
+    assert c.report()["members"]["tv_5m"]["n"] == 5        # grades preserved
+    assert c.maybe_reset("", ["tv_5m"]) is False           # empty token -> no-op
+    assert c.maybe_reset("v2", ["tv_5m"]) is True          # new token -> resets again
+    # reset_token survives a state roundtrip (won't re-run after restart)
+    c2 = LLMCouncil(enabled=True)
+    c2.load_state(c.to_state())
+    assert c2.maybe_reset("v2", ["tv_5m"]) is False
+
+
 def test_council_load_state_drops_ignored_members():
     c = LLMCouncil(enabled=True, min_samples=20, min_members=1, min_margin=0.0)
     c.forget(["tv_4m"])

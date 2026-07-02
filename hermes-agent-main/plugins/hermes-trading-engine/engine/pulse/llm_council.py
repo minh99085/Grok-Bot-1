@@ -179,12 +179,37 @@ class LLMCouncil:
         self._lock = threading.Lock()
         self._stats: dict = {}          # name -> {"n","correct"}
         self.ignore_members: set = set()  # retired members: never vote, grade, or report
+        self.reset_token = ""           # token of the last applied one-time member reset
         self.decisions = 0              # consensus dicts produced with trade=True
         self.evaluations = 0           # decide() calls
         self.graded = 0
 
     def _is_cold(self, name: str) -> bool:
         return int((self._stats.get(name) or {}).get("n", 0) or 0) < self.min_samples
+
+    def reset_members(self, names) -> int:
+        """Clear the graded stats for the named members WITHOUT retiring them -- they keep voting and
+        grade FRESH. Use when a member's underlying signal changes meaning (e.g. a 5m chart switched
+        from a trend alert to a mean-reversion alert), so its old grades no longer describe it."""
+        with self._lock:
+            n = 0
+            for name in (names or ()):
+                if str(name) in self._stats:
+                    del self._stats[str(name)]
+                    n += 1
+            return n
+
+    def maybe_reset(self, token, names) -> bool:
+        """One-time, token-gated reset: if ``token`` is set and differs from the last applied token,
+        reset ``names`` and record the token (so it does not re-run on later restarts). Returns True
+        if a reset was applied."""
+        token = str(token or "")
+        if not token or token == self.reset_token:
+            return False
+        self.reset_members(names)
+        with self._lock:
+            self.reset_token = token
+        return True
 
     def forget(self, names) -> None:
         """Retire members (e.g. TFs the operator removed): drop their graded stats and ignore any
@@ -289,11 +314,12 @@ class LLMCouncil:
         with self._lock:
             return {"stats": {n: dict(s) for n, s in self._stats.items()},
                     "decisions": self.decisions, "evaluations": self.evaluations,
-                    "graded": self.graded}
+                    "graded": self.graded, "reset_token": self.reset_token}
 
     def load_state(self, data: dict) -> None:
         if not data:
             return
+        self.reset_token = str(data.get("reset_token") or "")
         with self._lock:
             self._stats = {n: {"n": int(s.get("n", 0) or 0), "correct": int(s.get("correct", 0) or 0)}
                            for n, s in (data.get("stats") or {}).items()

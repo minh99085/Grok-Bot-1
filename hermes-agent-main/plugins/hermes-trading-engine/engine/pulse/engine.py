@@ -319,6 +319,8 @@ class PulseConfig:
     council_best_ev: bool = False             # pick side by max(prob-ask), not favorite-by-probability
     council_tv_member: bool = False           # TV alert direction as a graded council member (follow/fade)
     council_tv_max_age_s: float = 900.0       # per-TF TV read only votes if fresher than this (window clock)
+    tv_reset_token: str = ""                  # bump to trigger a one-time reset of tv_reset_members
+    tv_reset_members: tuple = ()              # council members to reset when tv_reset_token changes
     claude_decider_enabled: bool = False      # Claude directional second-opinion (council member)
     claude_decider_model: str = ""
     claude_decider_timeout_s: float = 18.0
@@ -814,6 +816,10 @@ class PulseConfig:
             council_tv_member=str(os.getenv("PULSE_COUNCIL_TV_MEMBER", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
             council_tv_max_age_s=_envf("PULSE_TV_COUNCIL_MAX_AGE_S", 900.0),
+            tv_reset_token=(os.getenv("PULSE_TV_RESET_TOKEN", "") or "").strip(),
+            tv_reset_members=tuple(
+                s.strip() for s in (os.getenv("PULSE_TV_RESET_MEMBERS", "") or "").split(",")
+                if s.strip()),
             claude_decider_enabled=str(os.getenv("PULSE_CLAUDE_DECIDER_ENABLED", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
             claude_decider_model=str(os.getenv("PULSE_CLAUDE_DECIDER_MODEL", "") or ""),
@@ -1829,6 +1835,12 @@ class PulseEngine:
             self.grok_news.load_state(acct.get("grok_news") or {})
         if self.llm_council is not None:
             self.llm_council.load_state(acct.get("llm_council") or {})
+            # one-time, token-gated reset of members whose underlying signal changed meaning (e.g. a
+            # 5m chart switched from a trend alert to a mean-reversion alert) -> grade them fresh.
+            if self.cfg.tv_reset_members and self.llm_council.maybe_reset(
+                    self.cfg.tv_reset_token, self.cfg.tv_reset_members):
+                logger.info("llm_council one-time reset applied token=%s members=%s",
+                            self.cfg.tv_reset_token, list(self.cfg.tv_reset_members))
         self._council_pending = list(acct.get("council_pending") or [])
         self._mc_grader.load_state(acct.get("mc_flag_grading") or {})
         self._mc_dep_pending = list(acct.get("mc_dep_pending") or [])

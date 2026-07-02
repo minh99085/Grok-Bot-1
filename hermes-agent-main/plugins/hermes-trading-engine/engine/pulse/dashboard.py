@@ -322,8 +322,8 @@ function buildRows(s){
   if(!anyBep)addRow(rows,'Entry price buckets','No settled directional trades yet',
     'realized win rate vs implied (price) appears here as trades settle','yellow');
 
-  // ---- TradingView signals: each timeframe's live direction + how the council uses it ----
-  addSection(rows,'TradingView signals (per timeframe)');
+  // ---- TradingView signals: mean-reversion 3m + 5m; how the council grades/uses each ----
+  addSection(rows,'TradingView signals · mean-reversion (3m + 5m)');
   const tvd=s.tradingview||{};
   const bytf=tvd.tradingview_latest_by_timeframe||{};
   const mem2=(s.llm_council||{}).members||{};
@@ -331,7 +331,7 @@ function buildRows(s){
   if(mtf){
     addRow(rows,'TV multi-timeframe (the voter)',
       (mtf.stance||'cold').toUpperCase()+(mtf.accuracy!=null?' · '+(mtf.accuracy*100).toFixed(0)+'% acc (n='+f(mtf.n,0)+')':' (learning)'),
-      'agreement-weighted blend of the 4 alerts — this is the TV signal that actually votes',
+      'agreement-weighted blend of the 3m + 5m mean-reversion signals — the TV signal that actually votes',
       mtf.stance==='follow'?'green':(mtf.stance==='fade'?'yellow':'yellow'));
   }
   const tfKeys=Object.keys(bytf).sort((a,b)=>{
