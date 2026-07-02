@@ -232,6 +232,60 @@ def test_tv_mtf_view_combines_timeframes_by_agreement(tmp_path):
     assert eng._tv_mtf_view(0.0) is None
 
 
+def _mini_engine(tmp_path, **cfg_over):
+    from engine.pulse.engine import PulseEngine, PulseConfig
+    from engine.pulse.price import PulsePriceFeed
+    from engine.pulse.fair_value import RollingVol
+
+    class _Mkt:
+        def active_windows(self, now=None, **kw):
+            return []
+
+        def hydrate_books(self, w):
+            return w
+
+    feed = PulsePriceFeed(fetcher=lambda: 64000.0, source_name="rtds_chainlink",
+                          vol=RollingVol(window_s=900, min_samples=2), max_open_lag_s=9999.0)
+    cfg = PulseConfig(tick_seconds=1.0, data_dir=str(tmp_path), tradingview_webhook_port=0,
+                      llm_council_enabled=True, **cfg_over)
+    return PulseEngine(cfg, market_feed=_Mkt(), price_feed=feed)
+
+
+def test_tv_freshness_cap_drops_stale_offgrid_read(tmp_path):
+    import types
+    eng = _mini_engine(tmp_path, council_tv_member=True, council_tv_max_age_s=900.0)
+    now = 1_000_000.0
+    up = types.SimpleNamespace(direction="UP", strength=0.8)
+    eng.tradingview = types.SimpleNamespace(latest_by_tf={
+        ("BTCUSD", "5"): (up, now - 10),      # fresh 5m -> votes
+        ("BTCUSD", "60"): (up, now - 2700),   # 45-min-stale 1h (off-grid) -> dropped by the cap
+    })
+    views = eng._tv_per_tf_views(now)
+    assert "tv_5m" in views and views["tv_5m"] == 0.9
+    assert "tv_60m" not in views                 # stale beyond the 900s window cap
+
+
+def test_btc_correlated_exposure_sums_directional_and_dep_arb(tmp_path):
+    import types
+    eng = _mini_engine(tmp_path, correlated_exposure_cap_usd=20.0)
+    # directional: one open UP ($6), one open DOWN ($5), one settled UP (ignored)
+    eng.ledger.positions = {
+        "u1": types.SimpleNamespace(status="open", side="up", size_usd=6.0),
+        "d1": types.SimpleNamespace(status="open", side="down", size_usd=5.0),
+        "u2": types.SimpleNamespace(status="settled", side="up", size_usd=9.0),
+    }
+    up_only_dir = eng._btc_correlated_exposure("up")
+    assert up_only_dir == 6.0                      # only the open UP directional
+    assert eng._btc_correlated_exposure("down") == 5.0
+    if eng.dep_arb_ledger is not None:             # dep-arb parent-UP adds to BTC-up exposure
+        eng.dep_arb_ledger.positions = {
+            "p1": {"status": "open", "cost_usd": 5.0},
+            "p2": {"status": "settled", "cost_usd": 50.0},   # ignored
+        }
+        assert eng._btc_correlated_exposure("up") == 11.0    # 6 directional + 5 dep-arb
+        assert eng._btc_correlated_exposure("down") == 5.0   # dep-arb never adds to DOWN
+
+
 def test_engine_status_exposes_council(tmp_path):
     from engine.pulse.engine import PulseEngine, PulseConfig
     from engine.pulse.price import PulsePriceFeed

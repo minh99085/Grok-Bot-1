@@ -281,6 +281,7 @@ class PulseConfig:
     # keeps learning and can DISCOVER winning buckets. 0 = strict block-all; 1 = effectively off.
     directional_explore_rate: float = 0.05
     directional_max_bankroll_frac: float = 0.10   # cap directional open exposure vs starting capital
+    correlated_exposure_cap_usd: float = 0.0      # cap same-direction BTC exposure across lanes (0=off)
     directional_down_only: bool = True            # hard block ALL directional UP (no bypass)
     directional_block_up_until_promoted: bool = True  # hard block UP until direction=up promoted
     directional_up_restrictions_enabled: bool = True  # UP-only extra gates (TV/down-bias/RR premium)
@@ -317,6 +318,7 @@ class PulseConfig:
     llm_council_min_members: int = 2
     council_best_ev: bool = False             # pick side by max(prob-ask), not favorite-by-probability
     council_tv_member: bool = False           # TV alert direction as a graded council member (follow/fade)
+    council_tv_max_age_s: float = 900.0       # per-TF TV read only votes if fresher than this (window clock)
     claude_decider_enabled: bool = False      # Claude directional second-opinion (council member)
     claude_decider_model: str = ""
     claude_decider_timeout_s: float = 18.0
@@ -744,6 +746,7 @@ class PulseConfig:
             directional_winning_min_samples=int(_envf("PULSE_DIRECTIONAL_WINNING_MIN_SAMPLES", 30)),
             directional_explore_rate=_envf("PULSE_DIRECTIONAL_EXPLORE_RATE", 0.05),
             directional_max_bankroll_frac=_envf("PULSE_DIRECTIONAL_MAX_BANKROLL_FRAC", 0.10),
+            correlated_exposure_cap_usd=_envf("PULSE_CORRELATED_EXPOSURE_CAP_USD", 0.0),
             directional_down_only=str(
                 os.getenv("PULSE_DIRECTIONAL_DOWN_ONLY", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -810,6 +813,7 @@ class PulseConfig:
             in ("1", "true", "yes", "on"),
             council_tv_member=str(os.getenv("PULSE_COUNCIL_TV_MEMBER", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
+            council_tv_max_age_s=_envf("PULSE_TV_COUNCIL_MAX_AGE_S", 900.0),
             claude_decider_enabled=str(os.getenv("PULSE_CLAUDE_DECIDER_ENABLED", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
             claude_decider_model=str(os.getenv("PULSE_CLAUDE_DECIDER_MODEL", "") or ""),
@@ -3033,6 +3037,17 @@ class PulseEngine:
                     self.markov.record_terminal(state=cand_state, accepted=False)
                 _finalize(dr, "rejected", reason="directional_bankroll_cap", stage="directional")
                 continue
+            # cross-lane correlated-exposure cap: don't stack this directional bet on top of same-
+            # direction exposure already open in another lane (e.g. dep-arb parent-UP + directional UP
+            # are both long BTC-up on overlapping windows).
+            if self.cfg.correlated_exposure_cap_usd > 0:
+                corr = self._btc_correlated_exposure(d.side, now)
+                if corr + trade_size > self.cfg.correlated_exposure_cap_usd + 1e-6:
+                    dr.action = RejectAction(stage="directional", reason="correlated_exposure_cap")
+                    if self.markov is not None:
+                        self.markov.record_terminal(state=cand_state, accepted=False)
+                    _finalize(dr, "rejected", reason="correlated_exposure_cap", stage="directional")
+                    continue
             pos = self.ledger.open_position(w, d, now, size_usd=trade_size,
                                             s_open=snap.price, decision_id=mc.decision_id)
             if pos is None:
@@ -3947,7 +3962,11 @@ class PulseEngine:
                     tfn = int(str(tf))
                 except (TypeError, ValueError):
                     continue
-                if (now - float(ts)) > max(300.0, tfn * 60.0 * 2.5):
+                # freshness: lenient per-TF window, but HARD-capped to the window clock so a stale,
+                # cadence-misaligned read (e.g. a 1h alert at :45, ~45 min old) can't vote on a bet
+                # placed at the 15m window open. Off-grid TFs simply drop out when they go stale.
+                if (now - float(ts)) > min(max(300.0, tfn * 60.0 * 2.5),
+                                           float(self.cfg.council_tv_max_age_s)):
                     continue
                 d = str(getattr(ev, "direction", "") or "").upper()
                 s = getattr(ev, "strength", None)
@@ -5339,6 +5358,16 @@ class PulseEngine:
                             int(self.dep_arb_ledger.rejected_by_reason.get(
                                 gate_reason, 0) or 0) + 1)
                         trade = None
+            # cross-lane correlated-exposure cap: dep-arb is parent-UP (long BTC-up); don't stack it on
+            # top of directional UP + other dep-arb UP already open beyond the cap.
+            if trade and self.cfg.correlated_exposure_cap_usd > 0:
+                _cost = float(trade.get("cost_usd") or 0.0)
+                if self._btc_correlated_exposure("up", now) + _cost \
+                        > self.cfg.correlated_exposure_cap_usd + 1e-6:
+                    self.dep_arb_ledger.rejected_by_reason["correlated_exposure_cap"] = (
+                        int(self.dep_arb_ledger.rejected_by_reason.get(
+                            "correlated_exposure_cap", 0) or 0) + 1)
+                    trade = None
             if trade and self.dep_arb_ledger.book(trade, now=now):
                 self.loops.beat("dependency_arb", now)
 
@@ -5348,6 +5377,24 @@ class PulseEngine:
             if pos.status == "open":
                 exp += float(getattr(pos, "size_usd", 0.0) or 0.0)
         return exp
+
+    def _btc_correlated_exposure(self, side, now: float = 0.0) -> float:
+        """Same-direction BTC exposure currently OPEN across lanes -- so the lanes don't stack the
+        same directional bet. For a directional ``side``: sum open directional positions on that side
+        PLUS, for UP, all open dep-arb parent-UP positions (nested implication = long BTC-up). The
+        dutch-book lane is risk-free (hedged) so it never counts. Read-only; only ever BLOCKS a new
+        entry, never forces one."""
+        side = str(side or "").lower()
+        exp = 0.0
+        for pos in self.ledger.positions.values():
+            if getattr(pos, "status", None) == "open" \
+                    and str(getattr(pos, "side", "")).lower() == side:
+                exp += float(getattr(pos, "size_usd", 0.0) or 0.0)
+        if side == "up" and self.dep_arb_ledger is not None:
+            for p in self.dep_arb_ledger.positions.values():
+                if isinstance(p, dict) and p.get("status") == "open":
+                    exp += float(p.get("cost_usd") or 0.0)
+        return round(exp, 6)
 
     def _up_direction_promoted(self) -> bool:
         """True when direction=up bucket clears Wilson LB promotion (n>=min, PnL>0)."""
@@ -5802,6 +5849,9 @@ class PulseEngine:
                     float(self.cfg.starting_capital_usd)
                     * float(self.cfg.directional_max_bankroll_frac), 2),
                 "open_exposure_usd": round(self._directional_open_exposure(), 2),
+                "correlated_exposure_cap_usd": float(self.cfg.correlated_exposure_cap_usd),
+                "correlated_up_exposure_usd": self._btc_correlated_exposure("up"),
+                "correlated_down_exposure_usd": self._btc_correlated_exposure("down"),
                 "block_up_until_promoted": bool(self.cfg.directional_block_up_until_promoted),
                 "directional_down_only": bool(self.cfg.directional_down_only),
                 "directional_series_slugs": list(self.cfg.directional_series_slugs),
