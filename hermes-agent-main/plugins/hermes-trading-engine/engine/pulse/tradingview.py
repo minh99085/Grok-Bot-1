@@ -1368,6 +1368,8 @@ class TradingViewIntake:
                         "direction": e.direction,
                         "strength": e.strength,
                         "signal_level": e.signal_level,
+                        "ts": _ts,                       # received time -> dashboard can flag stale
+                        "indicator_name": e.indicator_name,
                     }
                     for (s, tf), (e, _ts) in self.latest_by_tf.items()},
                 "tradingview_mtf_confirmation": self.mtf_confirmation(symbol=self.feature_symbol),

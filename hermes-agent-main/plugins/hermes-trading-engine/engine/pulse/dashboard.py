@@ -337,6 +337,8 @@ function buildRows(s){
   const tfKeys=Object.keys(bytf).sort((a,b)=>{
     const na=parseInt((a.split('@')[1]||'0'),10), nb=parseInt((b.split('@')[1]||'0'),10);
     return na-nb;});
+  const maxAge=(s.llm_council||{}).council_tv_max_age_s||900;
+  const nowSec=Date.now()/1000;
   if(tfKeys.length){
     tfKeys.forEach(k=>{
       const t=bytf[k]||{};
@@ -344,11 +346,13 @@ function buildRows(s){
       const cm=mem2['tv_'+tfn+'m']||{};
       const st=cm.stance||'cold';
       const dir=t.direction||'—';
-      const light=(dir==='FLAT'||dir==='—')?'yellow':(st==='follow'?'green':(st==='fade'?'yellow':'yellow'));
+      const age=(t.ts!=null)?(nowSec-Number(t.ts)):null;
+      const stale=(age!=null)&&(age>maxAge);   // older than the window clock -> does NOT vote
+      const light=stale?'red':((dir==='FLAT'||dir==='—')?'yellow':(st==='follow'?'green':(st==='fade'?'yellow':'yellow')));
       const stanceTxt=(st==='follow'?'FOLLOW':(st==='fade'?'FADE (inverted)':(st==='ignore'?'IGNORE':'learning')));
       addRow(rows,'TV '+tfn+'m',
-        dir+(t.strength!=null?' · strength '+f(t.strength,2):'')+(t.signal_level?' ('+t.signal_level+')':''),
-        'council: '+stanceTxt+(cm.accuracy!=null?' · '+(cm.accuracy*100).toFixed(0)+'% acc (n='+f(cm.n,0)+')':' — needs '+((s.llm_council||{}).min_samples||20)+' settled'),
+        (stale?'STALE — not voting · ':'')+dir+(t.strength!=null?' · strength '+f(t.strength,2):'')+(t.signal_level?' ('+t.signal_level+')':''),
+        (stale?('last seen '+fmtAge(age)+' ago · '):'')+'council: '+stanceTxt+(cm.accuracy!=null?' · '+(cm.accuracy*100).toFixed(0)+'% acc (n='+f(cm.n,0)+')':' — needs '+((s.llm_council||{}).min_samples||20)+' settled'),
         light);
     });
   }else{
