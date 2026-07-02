@@ -357,8 +357,15 @@ UPDATES = {
     # Operator 2026-07-01 "remove TV 2m 3m 4m": retired the short, anti-predictive TREND TFs.
     # 2026-07-02: un-drop 3 so a 3m MEAN-REVERSION alert can be tracked as tv_3m (3m closes on the
     # 15-min window grid; no 3m trend alert to collide with). 2 and 4 stay dropped.
-    "PULSE_TV_DROP_TIMEFRAMES": "2,4",
-    "PULSE_TV_MTF_TIMEFRAMES": "5,10,15",
+    # 2026-07-02: operator switched to TWO alerts only -- 3m + 5m MEAN-REVERSION. Retire everything
+    # else (drop 2/4/10/15/60) so only tv_3m + tv_5m are tracked; MTF context runs on 3,5.
+    "PULSE_TV_DROP_TIMEFRAMES": "2,4,10,15,60",
+    "PULSE_TV_MTF_TIMEFRAMES": "3,5",
+    # One-time reset: 5m switched from a TREND alert to MEAN-REVERSION, so its old grades (and the
+    # tv_mtf composite + legacy tv aggregate) no longer describe the signal -> clear them so they grade
+    # the mean-reversion signal fresh. Bump the token to re-trigger a future reset.
+    "PULSE_TV_RESET_TOKEN": "2026-07-02-meanrev-3m5m",
+    "PULSE_TV_RESET_MEMBERS": "tv,tv_3m,tv_5m,tv_mtf",
     # Cross-lane correlated-exposure cap (2026-07-02): directional UP and dep-arb parent-UP are both
     # long BTC-up; cap the combined same-direction exposure open at once so the 3 lanes don't stack the
     # same bet. Read-only gate (only blocks, never forces). ~$20 allows a normal mix, blocks piling on.
