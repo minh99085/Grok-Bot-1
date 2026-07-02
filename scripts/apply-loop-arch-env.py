@@ -259,12 +259,11 @@ UPDATES = {
     "PULSE_DEP_ARB_BUCKET_HALT_MAX_PF": "0.90",
     "PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S": "60",
-    # Widened 0.52 -> 0.70 (2026-07-02 "loosen dep-arb for volume"): ledger by entry_vwap showed the
-    # 0.60-0.70 band was a WINNER (83% WR, +$79) but the 0.52 cap cut it off. Open it up for volume; the
-    # min floor (0.50) still blocks the toxic <0.50 longshots and the MC +EV gate (threshold 0.0) filters
-    # the mid-band adverse-selection. New-regime dep-arb is 9/9 wins, so the gates are holding. MONITOR:
-    # if the 0.55-0.60 middle drags P&L negative, tighten back.
-    "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.70",
+    # Raised 0.70 -> 0.85 (2026-07-02): the fixed cap was blocking MC-APPROVED +EV opportunities above
+    # 0.70 (e.g. entry 0.80 with MC p_parent_up=0.94 -> +0.14 EV/$). The MC +EV gate (graded) is the
+    # intelligent arbiter now, so let it decide up to 0.85; keep a ceiling to avoid the extreme-price
+    # fragility (breakeven WR ~0.85, one loss wipes many wins). Floor 0.50 + MC gate remain the guards.
+    "PULSE_DEPENDENCY_ARB_MAX_ENTRY_VWAP": "0.85",
     # A1 edge fix (2026-07-01, ledger evidence n=128): cheap parent-UP entries are
     # adverse-selection. Ledger by entry_vwap: <0.50 nested lost -$440; floor at 0.50
     # flips the nested lane -$410 -> +$38 (WR 0.59->0.72, keeps 82/118) while the
@@ -283,12 +282,14 @@ UPDATES = {
     "PULSE_GROK_DEP_CONVERGENCE_MIN_CONVERGE_60S": "0.35",
     "PULSE_GROK_DEP_CONVERGENCE_MAX_CALLS_PER_HOUR": "30",
     "PULSE_DEP_ARB_VERIFIER_ENABLED": "1",
-    # Claude maker-checker AUTHORITATIVE on nested + conjunction (operator-authorized 2026-06-30):
-    # fail-CLOSED + require-verdict so a dep-arb fill needs an explicit Claude approve (was fail-open
-    # observe-only, which let nested bleed). pending/veto/error => no trade.
+    # FAIL-OPEN now (2026-07-02 "make dep-arb trade"): the verifier was fail-CLOSED + require-verdict,
+    # so Claude credit errors / timeouts hard-VETOED every fill (dep_arb_verifier_veto=212). Worse, its
+    # veto_quality graded "vetoes_costing_edge" (vetoed trades would've won 55.6% / +$2.67). Since the
+    # MC +EV gate (deterministic, graded) is now the real profitability arbiter, make Claude ADVISORY:
+    # no verdict / error / timeout => APPROVE (don't block). MC + entry floor stay the hard guards.
     "PULSE_DEP_ARB_VERIFIER_CONJUNCTION_ONLY": "0",
-    "PULSE_DEP_ARB_VERIFIER_FAIL_OPEN": "0",
-    "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT": "1",
+    "PULSE_DEP_ARB_VERIFIER_FAIL_OPEN": "1",
+    "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT": "0",
     "PULSE_DEP_ARB_VERIFIER_MAX_CALLS_PER_HOUR": "40",
     # LOCKS LIFTED (operator 2026-07-01 "remove all locks; make the loop learn+adjust"): directional
     # STOPPED 2026-07-02 (operator "stop Directional trading lane"): directional graded a coin flip
