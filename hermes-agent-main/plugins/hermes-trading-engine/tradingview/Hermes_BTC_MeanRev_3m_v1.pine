@@ -1,0 +1,118 @@
+//@version=6
+// =====================================================================================
+// Hermes BTC Pulse — Mean-Reversion 3m v1  (Grok-Bot-1 / Hermes pulse engine)
+// =====================================================================================
+// WHY 3m:
+//   The directional lane bets at the 15-minute window OPEN (:00/:15/:30/:45) and holds ~15 min.
+//   Over that short horizon price mean-reverts, so a REVERSION signal beats a trend one. 3m bars
+//   close exactly on the 15-min grid (15 / 3 = 5), so a 3m alert is cadence-aligned to the bot's
+//   entry, and — unlike 5m — there is no 3m TREND alert to collide with (the bot keys one council
+//   member per timeframe). Faster RSI (10) than the 5m version since 3m bars are noisier / the
+//   horizon is shorter.
+//
+//   RUN ON: INDEX:BTCUSD, 3-minute chart. One alert, "Any alert() function call", Once Per Bar Close.
+//   Webhook -> http://<vps-ip>/webhooks/tradingview   (same contract as the trend / 5m-MR scripts).
+//   Fire UP when oversold / stretched DOWN (expect bounce), DOWN when overbought / stretched UP.
+//   Suppressed in strong trends (ADX) so it never fades a breakout.
+//
+//   NOTE: the bot must NOT be dropping timeframe "3" (PULSE_TV_DROP_TIMEFRAMES). Make sure only THIS
+//   mean-reversion alert runs on 3m (no leftover 3m trend alert).
+// =====================================================================================
+indicator("Hermes BTC MeanRev 3m v1", overlay=true)
+
+// ---- Hermes settings ----
+secretInput   = input.string("PASTE_YOUR_HERMES_WEBHOOK_SECRET", "Hermes webhook secret")
+botName       = input.string("hermes", "Bot name")
+indicatorName = input.string("Hermes BTC MeanRev 3m v1", "Indicator name")
+
+// ---- Reversion inputs (tuned for 3m: faster RSI) ----
+rsiLen      = input.int(10, "RSI length", minval=2)
+rsiOS       = input.float(30, "RSI oversold",          minval=1,  maxval=49)
+rsiOSStrong = input.float(20, "RSI oversold STRONG",   minval=1,  maxval=49)
+rsiOB       = input.float(70, "RSI overbought",        minval=51, maxval=99)
+rsiOBStrong = input.float(80, "RSI overbought STRONG", minval=51, maxval=99)
+bbLen       = input.int(20, "Bollinger length", minval=2)
+bbMult      = input.float(2.0, "Bollinger mult", minval=0.5, step=0.1)
+adxLen      = input.int(14, "ADX length", minval=2)
+adxSmooth   = input.int(14, "ADX smoothing", minval=2)
+adxTrendMax = input.float(30.0, "Suppress reversion above ADX (strong trend = don't fade)", minval=5, step=1)
+
+jsonNum(x) => na(x) ? "null" : str.tostring(x)
+
+// ---- Indicators ----
+rsi   = ta.rsi(close, rsiLen)
+basis = ta.sma(close, bbLen)
+dev   = bbMult * ta.stdev(close, bbLen)
+bbUpper = basis + dev
+bbLower = basis - dev
+vwapValue = ta.vwap(hlc3)
+[plusDI, minusDI, adx] = ta.dmi(adxLen, adxSmooth)
+
+// ---- Stretch measures ----
+bbPenLow    = dev > 0 ? math.max(0.0, (bbLower - close) / dev) : 0.0        // how far BELOW lower band
+bbPenHigh   = dev > 0 ? math.max(0.0, (close - bbUpper) / dev) : 0.0        // how far ABOVE upper band
+vwapStretch = (not na(vwapValue) and vwapValue > 0) ? (close - vwapValue) / vwapValue : 0.0
+
+// Only revert inside a RANGE, never fade a strong trend.
+ranging = na(adx) or adx <= adxTrendMax
+
+// Oversold -> expect UP reversion; overbought -> expect DOWN reversion.
+osStrong = rsi <= rsiOSStrong or (rsi <= rsiOS and bbPenLow  > 0.10)
+os       = rsi <= rsiOS       or close < bbLower
+obStrong = rsi >= rsiOBStrong or (rsi >= rsiOB and bbPenHigh > 0.10)
+ob       = rsi >= rsiOB       or close > bbUpper
+
+fireUpStrong   = ranging and osStrong
+fireUp         = ranging and os and not fireUpStrong
+fireDownStrong = ranging and obStrong
+fireDown       = ranging and ob and not fireDownStrong
+
+signalDirection = (fireUpStrong or fireUp) ? "UP" : (fireDownStrong or fireDown) ? "DOWN" : "NONE"
+signalLevel     = fireUpStrong ? "UP_STRONG" : fireUp ? "UP_WEAK" : fireDownStrong ? "DOWN_STRONG" : fireDown ? "DOWN_WEAK" : "NONE"
+
+// Continuous, calibrated strength ~0.40..1.00 from how stretched price is.
+rsiDepthUp    = math.max(0.0, (rsiOS - rsi) / rsiOS)
+rsiDepthDown  = math.max(0.0, (rsi - rsiOB) / (100 - rsiOB))
+stretchUp     = math.min(1.0, math.max(rsiDepthUp, bbPenLow))
+stretchDown   = math.min(1.0, math.max(rsiDepthDown, bbPenHigh))
+activeStretch = signalDirection == "UP" ? stretchUp : signalDirection == "DOWN" ? stretchDown : 0.0
+signalStrength = signalDirection == "NONE" ? 0.0 : math.round((0.40 + 0.60 * activeStretch) * 100) / 100
+
+shouldAlert = barstate.isconfirmed and signalDirection != "NONE"
+
+// ---- Hermes JSON webhook (same contract as the trend / 5m-MR scripts) ----
+if shouldAlert
+    eventId = syminfo.ticker + "-" + timeframe.period + "-" + str.tostring(time) + "-" + signalLevel + "-mr-bot1"
+    msg = "{"
+    msg := msg + "\"secret\":\""          + secretInput + "\","
+    msg := msg + "\"bot_name\":\""         + botName + "\","
+    msg := msg + "\"source\":\"tradingview\","
+    msg := msg + "\"symbol\":\"INDEX:BTCUSD\","
+    msg := msg + "\"timeframe\":\""         + timeframe.period + "\","
+    msg := msg + "\"direction\":\""         + signalDirection + "\","
+    msg := msg + "\"signal_level\":\""      + signalLevel + "\","
+    msg := msg + "\"strength\":"            + str.tostring(signalStrength) + ","
+    msg := msg + "\"indicator_name\":\""    + indicatorName + "\","
+    msg := msg + "\"signal_kind\":\"mean_reversion\","
+    msg := msg + "\"event_id\":\""          + eventId + "\","
+    msg := msg + "\"bar_time\":\""          + str.tostring(time_close) + "\","
+    msg := msg + "\"price\":"               + jsonNum(close) + ","
+    msg := msg + "\"rsi\":"                 + jsonNum(rsi) + ","
+    msg := msg + "\"bb_lower\":"            + jsonNum(bbLower) + ","
+    msg := msg + "\"bb_upper\":"            + jsonNum(bbUpper) + ","
+    msg := msg + "\"vwap\":"                + jsonNum(vwapValue) + ","
+    msg := msg + "\"vwap_stretch\":"        + jsonNum(vwapStretch) + ","
+    msg := msg + "\"adx\":"                 + jsonNum(adx) + ","
+    msg := msg + "\"ranging\":"             + (ranging ? "true" : "false") + ","
+    msg := msg + "\"composite_version\":\"mr1-3m\","
+    msg := msg + "\"observe_only\":true"
+    msg := msg + "}"
+    alert(msg, alert.freq_once_per_bar_close)
+
+// ---- Visuals ----
+plot(bbUpper, "BB Upper", color=color.new(color.gray, 60))
+plot(basis,   "BB Basis", color=color.new(color.gray, 80))
+plot(bbLower, "BB Lower", color=color.new(color.gray, 60))
+plot(vwapValue, "VWAP",   color=color.new(color.blue, 0))
+plotshape(fireUpStrong or fireUp,     title="MR UP",   style=shape.triangleup,   location=location.belowbar, color=color.lime, size=size.small, text="MR-UP")
+plotshape(fireDownStrong or fireDown, title="MR DOWN", style=shape.triangledown, location=location.abovebar, color=color.red,  size=size.small, text="MR-DN")

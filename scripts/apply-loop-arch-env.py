@@ -340,10 +340,10 @@ UPDATES = {
     "PULSE_TV_FEATURE_SYMBOL": "BTCUSD",
     "TRADINGVIEW_ALLOWED_SYMBOLS": "BTCUSD,INDEX:BTCUSD,BTC/USD,BTC,XBTUSD",
     "TRADINGVIEW_MAX_AGE_S": "180",
-    # Operator 2026-07-01 "remove TV 2m 3m 4m": retire the short, anti-predictive TFs and consolidate
-    # on the horizon-matched set. Drop 2/3/4 -> not tracked per-TF (no council member, no dashboard row,
-    # stripped from persisted snapshots). MTF confirmation now runs on 5/10/15.
-    "PULSE_TV_DROP_TIMEFRAMES": "2,3,4",
+    # Operator 2026-07-01 "remove TV 2m 3m 4m": retired the short, anti-predictive TREND TFs.
+    # 2026-07-02: un-drop 3 so a 3m MEAN-REVERSION alert can be tracked as tv_3m (3m closes on the
+    # 15-min window grid; no 3m trend alert to collide with). 2 and 4 stay dropped.
+    "PULSE_TV_DROP_TIMEFRAMES": "2,4",
     "PULSE_TV_MTF_TIMEFRAMES": "5,10,15",
     # Cross-lane correlated-exposure cap (2026-07-02): directional UP and dep-arb parent-UP are both
     # long BTC-up; cap the combined same-direction exposure open at once so the 3 lanes don't stack the
