@@ -248,9 +248,15 @@ UPDATES = {
     "PULSE_DEPENDENCY_ARB_MAX_CHILD_WINDOW_AGE_S": "120",
     "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_OBSERVE": "1",
     "PULSE_DEPENDENCY_ARB_MID_CONVERGENCE_HORIZONS_S": "30,60,120",
-    # LOCKS LIFTED (operator 2026-07-01): runtime self-tuning ON — the loop may auto-apply dep-arb
-    # experiments (e.g. flip nested_execute on bleeding buckets) from live settled evidence.
-    "PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY": "1",
+    # Auto-apply OFF (2026-07-02 "make dep-arb trade"): it was DISABLING nested_execute because every
+    # bucket's PF < 1.0 (legacy -$406 from cheap entries now floored out), which froze the whole nested
+    # lane. Keep nested_execute ON; per-bucket safety is the (relaxed) bucket_bleeding gate below.
+    "PULSE_DEPENDENCY_ARB_EXPERIMENT_AUTO_APPLY": "0",
+    # Bucket-bleeding halt threshold: was hard 1.0 (require PROFITABLE bucket), which blocked even the
+    # break-even >0.50 band (PF 0.99) -> chicken-and-egg freeze. Relax to 0.90: still halts the toxic
+    # cheaper buckets (PF 0.26-0.88) but lets the break-even >0.50 band trade, MC +EV gate selecting
+    # the +EV entries within it. Floor 0.50 + MC gate remain the hard adverse-selection guards.
+    "PULSE_DEP_ARB_BUCKET_HALT_MAX_PF": "0.90",
     "PULSE_DEPENDENCY_ARB_MID_EXIT_ENABLED": "1",
     "PULSE_DEPENDENCY_ARB_MID_EXIT_HORIZON_S": "60",
     # Widened 0.52 -> 0.70 (2026-07-02 "loosen dep-arb for volume"): ledger by entry_vwap showed the

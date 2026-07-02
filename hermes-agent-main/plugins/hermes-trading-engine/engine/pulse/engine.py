@@ -297,6 +297,7 @@ class PulseConfig:
     dependency_arb_kelly_depth_frac: float = 0.5  # cap size at this frac of ask depth
     # Dep-arb experiments (paper-only): conjunction-only execute, clock-skew, mid-convergence observe
     dependency_arb_nested_execute: bool = True
+    dependency_arb_bucket_halt_max_pf: float = 1.0   # halt a bucket if settled PF < this (bleeding gate)
     dependency_arb_clock_skew_enabled: bool = False
     dependency_arb_min_parent_book_age_s: float = 120.0
     dependency_arb_max_child_book_age_s: float = 90.0
@@ -779,6 +780,7 @@ class PulseConfig:
             dependency_arb_nested_execute=str(
                 os.getenv("PULSE_DEPENDENCY_ARB_NESTED_EXECUTE", "1")).strip().lower()
             in ("1", "true", "yes", "on"),
+            dependency_arb_bucket_halt_max_pf=_envf("PULSE_DEP_ARB_BUCKET_HALT_MAX_PF", 1.0),
             dependency_arb_clock_skew_enabled=str(
                 os.getenv("PULSE_DEPENDENCY_ARB_CLOCK_SKEW_ENABLED", "0")).strip().lower()
             in ("1", "true", "yes", "on"),
@@ -5307,6 +5309,7 @@ class PulseEngine:
                 halted, halt_reason = dep_arb_bucket_bleeding(
                     float(trade.get("entry_vwap") or 0),
                     self.dep_arb_ledger.calibration,
+                    max_pf=float(self.cfg.dependency_arb_bucket_halt_max_pf),
                     constraint_type=str(trade.get("constraint_type") or ""),
                 )
                 if halted:

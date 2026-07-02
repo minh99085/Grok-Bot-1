@@ -14,6 +14,21 @@ from engine.pulse.dependency_arb import (
 )
 
 
+def test_bucket_halt_max_pf_threshold_configurable():
+    # a break-even bucket (PF just under 1.0) is halted at the default 1.0 bar but allowed at 0.90.
+    cal = DependencyArbCalibration()
+    # 6 settled: 3 wins +$10, 3 losses -$10.1 -> PF = 30 / 30.3 = 0.9901 (< 1.0, >= 0.90)
+    for _ in range(3):
+        cal.record_settled(0.55, 10.0, True, constraint_type="nested_implication")
+    for _ in range(3):
+        cal.record_settled(0.55, -10.1, False, constraint_type="nested_implication")
+    halted_default, _ = dep_arb_bucket_bleeding(0.55, cal, constraint_type="nested_implication")
+    assert halted_default is True                                   # PF 0.99 < 1.0 -> halted
+    halted_relaxed, _ = dep_arb_bucket_bleeding(
+        0.55, cal, max_pf=0.90, constraint_type="nested_implication")
+    assert halted_relaxed is False                                  # PF 0.99 >= 0.90 -> allowed
+
+
 def test_nested_bleed_does_not_block_conjunction():
     cal = DependencyArbCalibration()
     for _ in range(6):
