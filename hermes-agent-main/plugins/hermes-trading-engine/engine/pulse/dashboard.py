@@ -347,7 +347,8 @@ function buildRows(s){
       const st=cm.stance||'cold';
       const dir=t.direction||'—';
       const age=(t.ts!=null)?(nowSec-Number(t.ts)):null;
-      const stale=(age!=null)&&(age>maxAge);   // older than the window clock -> does NOT vote
+      const tfAge=Math.min(Math.max(300,(parseInt(tfn,10)||5)*150),maxAge);  // per-TF voting freshness
+      const stale=(age!=null)&&(age>tfAge);   // older than the vote window -> does NOT vote
       const light=stale?'red':((dir==='FLAT'||dir==='—')?'yellow':(st==='follow'?'green':(st==='fade'?'yellow':'yellow')));
       const stanceTxt=(st==='follow'?'FOLLOW':(st==='fade'?'FADE (inverted)':(st==='ignore'?'IGNORE':'learning')));
       addRow(rows,'TV '+tfn+'m',
