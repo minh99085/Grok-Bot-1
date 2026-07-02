@@ -1,0 +1,123 @@
+//@version=6
+// =====================================================================================
+// Hermes BTC Pulse — Mean-Reversion v1  (Grok-Bot-1 / Hermes pulse engine)
+// =====================================================================================
+// WHY THIS ALERT:
+//   The bot predicts a 15-minute up/down window, entering with ~8-11 min to close. Over that
+//   SHORT remaining horizon, longer trends MEAN-REVERT — which is why the trend composite grades
+//   anti-predictive at 10m/15m/1h (the council fades them). This alert captures the OTHER side:
+//   fire UP when price is oversold / stretched DOWN (expect a bounce), DOWN when overbought /
+//   stretched UP. It is the reversion edge the trend alerts are on the wrong side of.
+//
+//   RUN ON: INDEX:BTCUSD, 5-minute chart (the bot's horizon sweet spot). One alert, "Any alert()
+//   function call", webhook -> http://<vps-ip>/webhooks/tradingview
+//
+//   SAME webhook contract as the trend composite (v7). Distinct indicator_name + signal_kind +
+//   event_id suffix so it is recognizable as a mean-reversion signal. event_id ends in "-bot1" so
+//   Bot 1 accepts it (Bot 1 only rejects ids ending in "-bot2").
+//
+//   NOTE ON TIMEFRAME KEYING: the bot currently keys a TradingView council member by TIMEFRAME
+//   (tv_5m, tv_10m, ...). Running this on 5m therefore occupies the SAME council slot as a 5m TREND
+//   alert (last write wins). Options: (a) run this on 5m and keep the TREND composite on 10m/15m/1h
+//   only (clean A/B — recommended), or (b) ask the engineer to key members by signal_kind so 5m
+//   trend + 5m mean-reversion grade as two separate members.
+// =====================================================================================
+indicator("Hermes BTC MeanRev v1", overlay=true)
+
+// ---- Hermes settings ----
+secretInput   = input.string("PASTE_YOUR_HERMES_WEBHOOK_SECRET", "Hermes webhook secret")
+botName       = input.string("hermes", "Bot name")
+indicatorName = input.string("Hermes BTC MeanRev v1", "Indicator name")
+
+// ---- Reversion inputs ----
+rsiLen      = input.int(14, "RSI length", minval=2)
+rsiOS       = input.float(30, "RSI oversold",          minval=1,  maxval=49)
+rsiOSStrong = input.float(20, "RSI oversold STRONG",   minval=1,  maxval=49)
+rsiOB       = input.float(70, "RSI overbought",        minval=51, maxval=99)
+rsiOBStrong = input.float(80, "RSI overbought STRONG", minval=51, maxval=99)
+bbLen       = input.int(20, "Bollinger length", minval=2)
+bbMult      = input.float(2.0, "Bollinger mult", minval=0.5, step=0.1)
+adxLen      = input.int(14, "ADX length", minval=2)
+adxSmooth   = input.int(14, "ADX smoothing", minval=2)
+adxTrendMax = input.float(28.0, "Suppress reversion above ADX (strong trend = don't fade)", minval=5, step=1)
+
+jsonNum(x) => na(x) ? "null" : str.tostring(x)
+
+// ---- Indicators ----
+rsi   = ta.rsi(close, rsiLen)
+basis = ta.sma(close, bbLen)
+dev   = bbMult * ta.stdev(close, bbLen)
+bbUpper = basis + dev
+bbLower = basis - dev
+vwapValue = ta.vwap(hlc3)
+[plusDI, minusDI, adx] = ta.dmi(adxLen, adxSmooth)
+
+// ---- Stretch measures ----
+bbPenLow    = dev > 0 ? math.max(0.0, (bbLower - close) / dev) : 0.0        // how far BELOW lower band
+bbPenHigh   = dev > 0 ? math.max(0.0, (close - bbUpper) / dev) : 0.0        // how far ABOVE upper band
+vwapStretch = (not na(vwapValue) and vwapValue > 0) ? (close - vwapValue) / vwapValue : 0.0
+
+// Only revert inside a RANGE, never fade a strong trend (avoid catching a falling knife).
+ranging = na(adx) or adx <= adxTrendMax
+
+// Oversold -> expect UP reversion; overbought -> expect DOWN reversion.
+osStrong = rsi <= rsiOSStrong or (rsi <= rsiOS and bbPenLow  > 0.10)
+os       = rsi <= rsiOS       or close < bbLower
+obStrong = rsi >= rsiOBStrong or (rsi >= rsiOB and bbPenHigh > 0.10)
+ob       = rsi >= rsiOB       or close > bbUpper
+
+fireUpStrong   = ranging and osStrong
+fireUp         = ranging and os and not fireUpStrong
+fireDownStrong = ranging and obStrong
+fireDown       = ranging and ob and not fireDownStrong
+
+signalDirection = (fireUpStrong or fireUp) ? "UP" : (fireDownStrong or fireDown) ? "DOWN" : "NONE"
+signalLevel     = fireUpStrong ? "UP_STRONG" : fireUp ? "UP_WEAK" : fireDownStrong ? "DOWN_STRONG" : fireDown ? "DOWN_WEAK" : "NONE"
+
+// Continuous, calibrated strength ~0.40..1.00 from how stretched price is (so the bot's strength
+// gate + council grading see graded conviction, not a flat number).
+rsiDepthUp    = math.max(0.0, (rsiOS - rsi) / rsiOS)
+rsiDepthDown  = math.max(0.0, (rsi - rsiOB) / (100 - rsiOB))
+stretchUp     = math.min(1.0, math.max(rsiDepthUp, bbPenLow))
+stretchDown   = math.min(1.0, math.max(rsiDepthDown, bbPenHigh))
+activeStretch = signalDirection == "UP" ? stretchUp : signalDirection == "DOWN" ? stretchDown : 0.0
+signalStrength = signalDirection == "NONE" ? 0.0 : math.round((0.40 + 0.60 * activeStretch) * 100) / 100
+
+shouldAlert = barstate.isconfirmed and signalDirection != "NONE"
+
+// ---- Hermes JSON webhook (same contract as the trend composite) ----
+if shouldAlert
+    eventId = syminfo.ticker + "-" + timeframe.period + "-" + str.tostring(time) + "-" + signalLevel + "-mr-bot1"
+    msg = "{"
+    msg := msg + "\"secret\":\""          + secretInput + "\","
+    msg := msg + "\"bot_name\":\""         + botName + "\","
+    msg := msg + "\"source\":\"tradingview\","
+    msg := msg + "\"symbol\":\"INDEX:BTCUSD\","
+    msg := msg + "\"timeframe\":\""         + timeframe.period + "\","
+    msg := msg + "\"direction\":\""         + signalDirection + "\","
+    msg := msg + "\"signal_level\":\""      + signalLevel + "\","
+    msg := msg + "\"strength\":"            + str.tostring(signalStrength) + ","
+    msg := msg + "\"indicator_name\":\""    + indicatorName + "\","
+    msg := msg + "\"signal_kind\":\"mean_reversion\","
+    msg := msg + "\"event_id\":\""          + eventId + "\","
+    msg := msg + "\"bar_time\":\""          + str.tostring(time_close) + "\","
+    msg := msg + "\"price\":"               + jsonNum(close) + ","
+    msg := msg + "\"rsi\":"                 + jsonNum(rsi) + ","
+    msg := msg + "\"bb_lower\":"            + jsonNum(bbLower) + ","
+    msg := msg + "\"bb_upper\":"            + jsonNum(bbUpper) + ","
+    msg := msg + "\"vwap\":"                + jsonNum(vwapValue) + ","
+    msg := msg + "\"vwap_stretch\":"        + jsonNum(vwapStretch) + ","
+    msg := msg + "\"adx\":"                 + jsonNum(adx) + ","
+    msg := msg + "\"ranging\":"             + (ranging ? "true" : "false") + ","
+    msg := msg + "\"composite_version\":\"mr1\","
+    msg := msg + "\"observe_only\":true"
+    msg := msg + "}"
+    alert(msg, alert.freq_once_per_bar_close)
+
+// ---- Visuals ----
+plot(bbUpper, "BB Upper", color=color.new(color.gray, 60))
+plot(basis,   "BB Basis", color=color.new(color.gray, 80))
+plot(bbLower, "BB Lower", color=color.new(color.gray, 60))
+plot(vwapValue, "VWAP",   color=color.new(color.blue, 0))
+plotshape(fireUpStrong or fireUp,     title="MR UP",   style=shape.triangleup,   location=location.belowbar, color=color.lime, size=size.small, text="MR-UP")
+plotshape(fireDownStrong or fireDown, title="MR DOWN", style=shape.triangledown, location=location.abovebar, color=color.red,  size=size.small, text="MR-DN")
