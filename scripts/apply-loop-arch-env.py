@@ -49,6 +49,10 @@ UPDATES = {
     # PULSE_TV_DROP_TIMEFRAMES) — the bot now runs the horizon-matched 5m/10m/15m/1h set. Add charts in
     # TradingView and they auto-join + get graded. Self-correcting; can't hurt more than a floored member.
     "PULSE_COUNCIL_TV_MEMBER": "1",
+    # TV freshness cap (2026-07-02): the bot bets at the 15m window OPEN (:00/:15/:30/:45). 5m/15m
+    # alerts close on that grid (fresh ~11s); 10m/1h are off-grid and go stale (a 1h read is 15-45 min
+    # old at :15/:30/:45). Cap a per-TF read's age to ~1 window so stale/misaligned reads stop voting.
+    "PULSE_TV_COUNCIL_MAX_AGE_S": "900",
     "PULSE_CLAUDE_DECIDER_ENABLED": "1",
     # Monte Carlo: correlated dep-arb conditional P(parent UP | children UP). Deterministic numpy sim.
     # GATE ON (operator 2026-07-01 "do it"): MC vetoes dep-arb entries whose conditional EV is clearly
@@ -341,6 +345,10 @@ UPDATES = {
     # stripped from persisted snapshots). MTF confirmation now runs on 5/10/15.
     "PULSE_TV_DROP_TIMEFRAMES": "2,3,4",
     "PULSE_TV_MTF_TIMEFRAMES": "5,10,15",
+    # Cross-lane correlated-exposure cap (2026-07-02): directional UP and dep-arb parent-UP are both
+    # long BTC-up; cap the combined same-direction exposure open at once so the 3 lanes don't stack the
+    # same bet. Read-only gate (only blocks, never forces). ~$20 allows a normal mix, blocks piling on.
+    "PULSE_CORRELATED_EXPOSURE_CAP_USD": "20",
     # ~2.5 bar lengths per TF (5m=750s, 10m=1500s, 15m=2250s); kept for any 2/3/4 that still arrive.
     "PULSE_TV_MTF_CONFIRM_WINDOW_2M_S": "300",
     "PULSE_TV_MTF_CONFIRM_WINDOW_3M_S": "450",
