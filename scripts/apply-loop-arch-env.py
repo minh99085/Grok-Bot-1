@@ -285,10 +285,10 @@ UPDATES = {
     "PULSE_DEP_ARB_VERIFIER_REQUIRE_VERDICT": "1",
     "PULSE_DEP_ARB_VERIFIER_MAX_CALLS_PER_HOUR": "40",
     # LOCKS LIFTED (operator 2026-07-01 "remove all locks; make the loop learn+adjust"): directional
-    # ON so trades flow and feed every learner (learning-blend/edge-model/selectivity need settled
-    # samples; only 24 collected while this was off). Selectivity + allowlist + calibration now govern
-    # entries from live evidence instead of a static freeze.
-    "PULSE_DIRECTIONAL_ENABLED": "1",
+    # STOPPED 2026-07-02 (operator "stop Directional trading lane"): directional graded a coin flip
+    # (~50% WR, edge~0), so halt it. Council/TV grading still runs observe-only for measurement; arb +
+    # dep-arb lanes are unaffected. Flip back to "1" to resume directional trading.
+    "PULSE_DIRECTIONAL_ENABLED": "0",
     # Verifier: stop starving cold-start exploration with "when unsure, veto" — exploration trades
     # get a shrunk approve instead of a hard veto so settled data can be collected and the veto's
     # own quality graded. Capability gated; full effect once wired into the follow path.
