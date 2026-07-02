@@ -220,10 +220,13 @@ UPDATES = {
     # (atomic risk-free arb + dep-arb conjunction/Claude-gated nested), no directional noise.
     "PULSE_ARB_ENABLED": "1",
     "PULSE_ARB_FEES": "0.0",
-    # Lowered 2026-07-01: 1415 near-misses within 2c at 0.003 — capture thin dutch-book edges.
-    "PULSE_ARB_EPSILON": "0.001",
-    "PULSE_ARB_EPSILON_5M": "0.001",
-    "PULSE_ARB_EPSILON_15M": "0.001",
+    # Loosened 2026-07-02 ("loosen Arb land a bit"): all rejects were below_epsilon (ask-sum ~$1.00),
+    # so halve the arbitrary buffer above fees -> capture thinner but still genuinely risk-free edges.
+    # STILL requires ask_sum < 1 - fees - epsilon (positive margin) + survives the non-atomic slippage
+    # sim, so we never book a guaranteed loss (ask_sum >= $1). Not lowered to 0 to avoid dust trades.
+    "PULSE_ARB_EPSILON": "0.0005",
+    "PULSE_ARB_EPSILON_5M": "0.0005",
+    "PULSE_ARB_EPSILON_15M": "0.0005",
     "PULSE_DEPENDENCY_ARB_EPSILON": "0.03",
     # WS3-B: Fréchet conjunction floor — the only dep-arb path that may EXECUTE. It is true
     # risk-free arb (all nested children UP => parent UP), so it stays ON.
@@ -330,7 +333,11 @@ UPDATES = {
     # Operator-authorized 2026-06-29: re-enabled so the sim is the PER-OPPORTUNITY cost filter that
     # makes the low epsilon above safe (rejects any near-miss that would lose after leg-2 slippage).
     "PULSE_ARB_NONATOMIC_ENABLED": "1",
-    "PULSE_ARB_NONATOMIC_SLIPPAGE_BPS": "50",
+    # Loosened 50 -> 35 bps (2026-07-02): the leg-2 adverse-slippage assumption was the effective gate
+    # once epsilon is thin. 35 bps is still a real execution-risk buffer on liquid BTC top-of-book, but
+    # lets thinner arbs survive the non-atomic sim. Booked trades still require positive post-slippage
+    # margin (risk-free). If any loosened arb books a LOSS, revert -- that would violate risk-free.
+    "PULSE_ARB_NONATOMIC_SLIPPAGE_BPS": "35",
     "PULSE_SIZING_PROMOTION_GATED": "1",
     # LOCKS LIFTED (operator 2026-07-01): dynamic edge-proportional sizing ON (still bounded by the
     # $5/bet dep-arb cap + bankroll caps + FORBID_SIZE_INCREASE, and promotion-gated so it scales
